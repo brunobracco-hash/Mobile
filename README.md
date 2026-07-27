@@ -1,0 +1,120 @@
+# pdf2kindle
+
+Converte um PDF qualquer em um **.docx refluível e diagramado para ler no Kindle** —
+não um "PDF com extensão trocada". O texto é remontado em parágrafos de verdade,
+com títulos hierárquicos, sumário navegável, imagens embutidas e as notas de
+rodapé reunidas no fim.
+
+O arquivo gerado é enviado direto para o Kindle (anexo em `seu-nome@kindle.com` ou
+pelo site *Enviar para Kindle*): a Amazon aceita `.docx` e usa os estilos de título
+para montar a navegação do e-book.
+
+## Por que não basta "salvar como Word"
+
+Um PDF guarda coordenadas, não texto corrido. Quem simplesmente extrai as palavras
+entrega ao Kindle um arquivo com linhas quebradas no meio da frase, número de página
+no meio do capítulo e colunas intercaladas. Este projeto desfaz a diagramação do
+papel antes de escrever o Word:
+
+| Problema do PDF | O que o pdf2kindle faz |
+| --- | --- |
+| Linhas soltas em vez de parágrafos | Reagrupa por entrelinhas, recuo e largura da linha |
+| Palavra hifenizada no fim da linha | Remonta a palavra (`inva-` + `riavelmente`) |
+| Parágrafo cortado pela quebra de página | Junta as duas metades |
+| Cabeçalho e rodapé repetidos | Detecta a repetição nas margens e descarta |
+| Número de página | Reconhece arábico, romano e "Página 3 de 200" |
+| Título corrente de seção no alto da página | Descarta quando repete um título do corpo |
+| Página de duas ou três colunas | Detecta as faixas vazias e lê coluna a coluna |
+| Sumário do PDF (com pontilhado e números) | Descarta e gera um sumário navegável próprio |
+| Nota de rodapé no pé da página | Tira do meio do texto e reúne no fim, com a página de origem |
+| PDF digitalizado, sem camada de texto | Avisa e roda OCR (se o `ocrmypdf` estiver instalado) |
+
+O `.docx` é escrito seguindo o que o conversor da Amazon espera: estilos
+`Título 1/2/3` nativos (é deles que sai o "Ir para"), recuo e espaçamento vindos do
+estilo — nunca de espaços, tabs ou parágrafos vazios —, imagens inline limitadas à
+largura do texto, e nada de tabelas, caixas de texto ou colunas.
+
+## Instalação
+
+```bash
+pip install -r requirements.txt      # ou: pip install -e .
+```
+
+OCR é opcional e só é usado em PDFs digitalizados:
+
+```bash
+sudo apt install ocrmypdf tesseract-ocr-por
+```
+
+## Uso — linha de comando
+
+```bash
+python -m pdf2kindle livro.pdf                    # gera livro.docx
+python -m pdf2kindle livro.pdf -o meu-ebook.docx
+python -m pdf2kindle *.pdf -d convertidos/        # lote
+python -m pdf2kindle digitalizado.pdf --ocr force
+```
+
+Ao final imprime um relatório com páginas, títulos, parágrafos, imagens e notas —
+e avisa quando algo merece revisão (por exemplo, nenhum título detectado).
+
+### Opções
+
+| Opção | Para quê |
+| --- | --- |
+| `--title` / `--author` | Sobrescreve os metadados (viram título e autor do e-book) |
+| `--font`, `--size`, `--line-spacing` | Aparência no Word (o Kindle aplica a fonte do leitor) |
+| `--no-justify` | Alinha à esquerda em vez de justificar |
+| `--no-toc`, `--no-title-page` | Dispensa o sumário ou a folha de rosto |
+| `--no-page-breaks` | Não começa cada capítulo em página nova |
+| `--no-images` | Descarta as imagens (arquivo bem menor) |
+| `--footnotes end\|inline\|drop` | Notas no fim (padrão), onde estão, ou fora |
+| `--ocr auto\|force\|off`, `--ocr-lang` | Controle do OCR |
+| `--lang` | Idioma do documento (padrão `pt-BR`) |
+
+## Uso — interface web
+
+```bash
+python -m pdf2kindle.web            # http://127.0.0.1:5000
+```
+
+Arraste o PDF, ajuste as opções, baixe o `.docx`. Roda só na sua máquina: os
+arquivos ficam em uma pasta temporária, apagada depois do download.
+
+## Como está organizado
+
+```
+pdf2kindle/
+  extract.py      PDF → blocos, na ordem de leitura, sem cabeçalho/rodapé
+  structure.py    blocos → documento semântico (títulos, parágrafos, listas, notas)
+  docx_writer.py  documento → .docx com as regras do Kindle
+  converter.py    pipeline completo, incluindo OCR
+  cli.py / web.py interfaces
+```
+
+A separação é proposital: `extract.py` só entende geometria, `structure.py` só
+decide semântica e `docx_writer.py` só conhece as restrições do Kindle. Dá para
+trocar o escritor por um de EPUB sem tocar no resto.
+
+## Testes
+
+```bash
+pytest -q      # 53 testes
+```
+
+A suíte gera um PDF de teste com todos os defeitos típicos (cabeçalho repetido,
+parágrafo partido entre páginas, hifenização, duas colunas, sumário com pontilhado,
+título corrente, lista, nota de rodapé e imagem) e verifica tanto a extração quanto
+as regras do arquivo final — inclusive as que o Kindle não perdoa: nada de
+parágrafo vazio, tabulação, quebra manual de linha ou tabela.
+
+## Limitações honestas
+
+* **Tabelas** viram texto corrido. É proposital: tabela em Kindle sai ilegível.
+  Se o seu PDF depende delas, mantenha o PDF.
+* **Fórmulas** em PDF são desenho, não texto: saem como uma sequência de símbolos.
+* A classificação de títulos é heurística (tamanho, negrito, caixa alta, numeração).
+  Em livros que usam uma fonte só para tudo, alguns títulos escapam — o relatório
+  avisa quando não encontra nenhum, e como o arquivo usa os estilos nativos do Word,
+  corrigir um título é questão de selecionar e aplicar `Título 1`.
+* PDF digitalizado sem `ocrmypdf` instalado gera um documento vazio, com aviso.

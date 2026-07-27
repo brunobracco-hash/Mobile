@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF → Word para Kindle</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f5f2; --card: #fff; --fg: #1c1b19; --muted: #6b6862;
+    --line: #dcd8d0; --accent: #8a5a2b; --ok: #2f6f4f; --warn: #8a6d1f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#16151a; --card:#201f26; --fg:#eceaf0; --muted:#a09daa;
+            --line:#343240; --accent:#d1a06a; --ok:#7fc7a2; --warn:#d9bd6a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:2rem 1rem 4rem; background:var(--bg); color:var(--fg);
+         font:16px/1.55 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; }
+  h1 { font-size:1.6rem; margin:0 0 .3rem; }
+  p.sub { color:var(--muted); margin:0 0 1.8rem; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px;
+          padding:1.25rem; margin-bottom:1rem; }
+  #drop { display:block; border:2px dashed var(--line); border-radius:14px; padding:2.5rem 1rem;
+          text-align:center; cursor:pointer; transition:.15s; background:var(--card); }
+  #drop.over { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 8%, var(--card)); }
+  #drop strong { display:block; font-size:1.05rem; margin-bottom:.3rem; }
+  #drop span { color:var(--muted); font-size:.9rem; }
+  input[type=file] { display:none; }
+  fieldset { border:none; padding:0; margin:0 0 1rem; }
+  legend { font-weight:600; margin-bottom:.6rem; padding:0; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:.75rem; }
+  label.field { display:flex; flex-direction:column; gap:.25rem; font-size:.85rem; color:var(--muted); }
+  input[type=text], input[type=number], select {
+    padding:.5rem .6rem; border:1px solid var(--line); border-radius:8px;
+    background:var(--bg); color:var(--fg); font-size:.95rem; }
+  .checks { display:flex; flex-wrap:wrap; gap:.9rem; margin-top:.9rem; font-size:.92rem; }
+  .checks label { display:flex; align-items:center; gap:.4rem; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:10px;
+           padding:.75rem 1.4rem; font-size:1rem; font-weight:600; cursor:pointer; }
+  button[disabled] { opacity:.55; cursor:progress; }
+  a.download { display:inline-block; background:var(--ok); color:#fff; text-decoration:none;
+               border-radius:10px; padding:.7rem 1.2rem; font-weight:600; margin-top:.8rem; }
+  .stats { display:flex; flex-wrap:wrap; gap:.5rem 1.2rem; color:var(--muted); font-size:.9rem; margin:.5rem 0 0; }
+  .warn { color:var(--warn); font-size:.9rem; margin:.4rem 0 0; }
+  .err { color:#c0392b; }
+  ol.help { color:var(--muted); font-size:.9rem; padding-left:1.2rem; margin:.4rem 0 0; }
+  code { background:var(--bg); padding:.1rem .35rem; border-radius:5px; font-size:.85em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>PDF → Word para Kindle</h1>
+  <p class="sub">O texto é remontado em parágrafos refluíveis, com títulos, sumário navegável e imagens — do jeito que o “Enviar para Kindle” espera receber.</p>
+
+  <form id="form">
+    <label id="drop" for="file">
+      <strong>Arraste o PDF aqui ou clique para escolher</strong>
+      <span id="chosen">até {{ max_mb }} MB</span>
+      <input type="file" id="file" name="file" accept="application/pdf,.pdf">
+    </label>
+
+    <div class="card" style="margin-top:1rem">
+      <fieldset>
+        <legend>Ajustes</legend>
+        <div class="grid">
+          <label class="field">Título <input type="text" name="title" placeholder="dos metadados do PDF"></label>
+          <label class="field">Autor <input type="text" name="author" placeholder="dos metadados do PDF"></label>
+          <label class="field">Fonte
+            <select name="font">
+              <option>Georgia</option><option>Bookerly</option><option>Garamond</option>
+              <option>Palatino Linotype</option><option>Times New Roman</option><option>Verdana</option>
+            </select>
+          </label>
+          <label class="field">Corpo (pt) <input type="number" name="body_pt" value="12" min="8" max="18" step="0.5"></label>
+          <label class="field">Entrelinhas <input type="number" name="line_spacing" value="1.15" min="1" max="2" step="0.05"></label>
+          <label class="field">Notas de rodapé
+            <select name="footnotes">
+              <option value="end">reunir no fim</option>
+              <option value="inline">manter onde estão</option>
+              <option value="drop">descartar</option>
+            </select>
+          </label>
+          <label class="field">PDF digitalizado (OCR)
+            <select name="ocr">
+              <option value="auto">automático</option>
+              <option value="force">sempre</option>
+              <option value="off">nunca</option>
+            </select>
+          </label>
+          <label class="field">Idioma
+            <select name="lang"><option value="pt-BR">Português (BR)</option><option value="pt-PT">Português (PT)</option><option value="en-US">Inglês</option><option value="es-ES">Espanhol</option></select>
+          </label>
+        </div>
+        <div class="checks">
+          <label><input type="checkbox" name="toc" checked> Sumário navegável</label>
+          <label><input type="checkbox" name="title_page" checked> Página de rosto</label>
+          <label><input type="checkbox" name="page_breaks" checked> Capítulo em página nova</label>
+          <label><input type="checkbox" name="images" checked> Manter imagens</label>
+          <label><input type="checkbox" name="justify" checked> Texto justificado</label>
+        </div>
+      </fieldset>
+      <button type="submit" id="go">Converter</button>
+    </div>
+  </form>
+
+  <div class="card" id="result" hidden></div>
+
+  <div class="card">
+    <strong>Depois de baixar</strong>
+    <ol class="help">
+      <li>Confira o arquivo no Word — os títulos usam os estilos <code>Título 1/2/3</code>, então dá para corrigir qualquer classificação errada em segundos.</li>
+      <li>Envie para <code>seu-nome@kindle.com</code> ou use o site <em>Enviar para Kindle</em>. A Amazon converte o .docx e usa os títulos para montar a navegação.</li>
+    </ol>
+  </div>
+</main>
+
+<script>
+const form = document.getElementById('form');
+const input = document.getElementById('file');
+const drop = document.getElementById('drop');
+const chosen = document.getElementById('chosen');
+const result = document.getElementById('result');
+const go = document.getElementById('go');
+
+['dragenter','dragover'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', ev => { if (ev.dataTransfer.files.length) { input.files = ev.dataTransfer.files; show(); } });
+input.addEventListener('change', show);
+function show() { chosen.textContent = input.files[0] ? input.files[0].name : 'até {{ max_mb }} MB'; }
+
+form.addEventListener('submit', async ev => {
+  ev.preventDefault();
+  if (!input.files[0]) { alert('Escolha um PDF primeiro.'); return; }
+  go.disabled = true; go.textContent = 'Convertendo…';
+  result.hidden = false;
+  result.innerHTML = '<p>Lendo o PDF e remontando o texto…</p>';
+  try {
+    const data = new FormData(form);
+    const res = await fetch('/convert', { method: 'POST', body: data });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || 'erro desconhecido');
+    const s = json.stats || {};
+    result.innerHTML = `
+      <strong>${json.title || json.name}</strong>
+      <p class="stats">
+        <span>${s.pages||0} páginas</span><span>${s.headings||0} títulos</span>
+        <span>${s.paragraphs||0} parágrafos</span><span>${s.images||0} imagens</span>
+        <span>${s.notes||0} notas</span>${json.ocr ? '<span>OCR aplicado</span>' : ''}
+      </p>
+      ${(json.warnings||[]).map(w => `<p class="warn">⚠ ${w}</p>`).join('')}
+      <a class="download" href="/download/${json.id}">Baixar ${json.name}</a>`;
+  } catch (err) {
+    result.innerHTML = `<p class="err">${err.message}</p>`;
+  } finally {
+    go.disabled = false; go.textContent = 'Converter';
+  }
+});
+</script>
+</body>
+</html>
