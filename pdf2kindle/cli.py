@@ -42,6 +42,20 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _prepare_console() -> None:
+    """Impede que o relatório derrube a conversão no console do Windows.
+
+    Lá a saída padrão é cp1252, que não tem '→' nem vários outros sinais: sem
+    isto, o arquivo é convertido com sucesso e o programa morre na hora de
+    contar o que fez.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")  # type: ignore[union-attr]
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def _expand(inputs: List[str]) -> List[str]:
     files: List[str] = []
     for item in inputs:
@@ -51,6 +65,7 @@ def _expand(inputs: List[str]) -> List[str]:
 
 
 def main(argv: List[str] | None = None) -> int:
+    _prepare_console()
     args = build_parser().parse_args(argv)
     files = _expand(args.inputs)
     if not files:

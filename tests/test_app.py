@@ -67,3 +67,21 @@ def test_web_recusa_arquivo_que_nao_e_pdf():
 
 def test_web_download_inexistente():
     assert create_app().test_client().get("/download/inexistente").status_code == 404
+
+
+def test_relatorio_nao_quebra_em_console_cp1252(sample_pdf, tmp_path):
+    """No Windows a saída padrão é cp1252, que não tem '→' — o relatório não
+    pode derrubar a conversão só por causa de um caractere."""
+    import contextlib
+    import io
+
+    saida = tmp_path / "windows.docx"
+    console = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+    with contextlib.redirect_stdout(console):
+        codigo = main([sample_pdf, "-o", str(saida)])
+
+    assert codigo == 0
+    assert saida.exists()
+    console.seek(0)
+    relatorio = console.buffer.getvalue().decode("cp1252")
+    assert "páginas" in relatorio and "títulos" in relatorio

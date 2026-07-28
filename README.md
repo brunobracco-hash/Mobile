@@ -56,11 +56,37 @@ que os dois não divirjam).
 pip install -r requirements.txt      # ou: pip install -e .
 ```
 
+Sem clonar o repositório (não precisa de Git):
+
+```bash
+pip install https://github.com/brunobracco-hash/Mobile/archive/refs/heads/claude/pdf-word-kindle-converter-2xnrir.zip
+```
+
 OCR é opcional e só é usado em PDFs digitalizados:
 
 ```bash
-sudo apt install ocrmypdf tesseract-ocr-por
+pip install ocrmypdf
+sudo apt install tesseract-ocr tesseract-ocr-por ghostscript
 ```
+
+### Windows
+
+Instale o Python de [python.org](https://www.python.org/downloads/windows/)
+marcando **"Add python.exe to PATH"**. Depois, no PowerShell:
+
+```powershell
+py -m venv .venv
+.venv\Scripts\Activate.ps1
+py -m pip install https://github.com/brunobracco-hash/Mobile/archive/refs/heads/claude/pdf-word-kindle-converter-2xnrir.zip
+pdf2kindle-web
+```
+
+Se o PowerShell recusar a ativação do ambiente, libere os scripts do usuário
+com `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+
+Para OCR no Windows, além de `pip install ocrmypdf`, instale os dois programas
+que ele chama: [Tesseract](https://github.com/UB-Mannheim/tesseract/wiki)
+(marcando o idioma português) e [Ghostscript](https://ghostscript.com/releases/gsdnld.html).
 
 ## Uso — linha de comando
 
