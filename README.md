@@ -28,6 +28,8 @@ papel antes de escrever o Word:
 | Sumário do PDF (com pontilhado e números) | Descarta e gera um sumário navegável próprio |
 | Nota de rodapé no pé da página | Tira do meio do texto e reúne no fim, com a página de origem |
 | PDF digitalizado, sem camada de texto | Avisa e roda OCR (se o `ocrmypdf` estiver instalado) |
+| Texto do OCR picado em fragmentos soltos | Remonta parágrafos e títulos partidos, na vertical e na horizontal |
+| Imagem da página inteira sob o texto do OCR | Descarta (duplicaria o texto e multiplicaria o tamanho) |
 
 O `.docx` é escrito seguindo o que o conversor da Amazon espera: estilos
 `Título 1/2/3` nativos (é deles que sai o "Ir para"), recuo e espaçamento vindos do
@@ -96,10 +98,34 @@ A separação é proposital: `extract.py` só entende geometria, `structure.py` 
 decide semântica e `docx_writer.py` só conhece as restrições do Kindle. Dá para
 trocar o escritor por um de EPUB sem tocar no resto.
 
+## Livro digitalizado
+
+Um PDF que é só a fotografia das páginas exige dois cuidados a mais, e ambos
+estão cobertos:
+
+```bash
+sudo apt install ocrmypdf tesseract-ocr-por
+python -m pdf2kindle livro-escaneado.pdf --ocr auto --ocr-lang por
+```
+
+O reconhecimento devolve o texto quebrado de um jeito que PDF digital nunca
+quebra — cada linha, e às vezes cada pedaço de linha, vira um bloco solto —, e
+deixa a imagem da página inteira por baixo do texto. Sem tratamento, o resultado
+é um `.docx` com uma linha por parágrafo, capítulos duplicados no sumário e
+vinte vezes o tamanho necessário. O conversor remonta os fragmentos pelo mesmo
+critério da quebra de página e descarta a digitalização quando há texto por cima.
+
+Medido no PDF de amostra digitalizado a 200 dpi, com inclinação, ruído e
+compressão JPEG: **6 títulos e 9 parágrafos, contra 6 títulos e 7 parágrafos do
+mesmo livro em PDF digital** — a mesma estrutura, e 0,04 MB em vez de 0,83 MB.
+
+Sem o `ocrmypdf` instalado, o aviso é explícito e as imagens das páginas são
+preservadas: um livro em fac-símile ainda é melhor do que um arquivo vazio.
+
 ## Testes
 
 ```bash
-pytest -q      # 53 testes
+pytest -q      # 61 testes
 ```
 
 A suíte gera um PDF de teste com todos os defeitos típicos (cabeçalho repetido,
@@ -117,4 +143,9 @@ parágrafo vazio, tabulação, quebra manual de linha ou tabela.
   Em livros que usam uma fonte só para tudo, alguns títulos escapam — o relatório
   avisa quando não encontra nenhum, e como o arquivo usa os estilos nativos do Word,
   corrigir um título é questão de selecionar e aplicar `Título 1`.
-* PDF digitalizado sem `ocrmypdf` instalado gera um documento vazio, com aviso.
+* Em livro digitalizado, **as figuras se perdem**: elas fazem parte do bitmap da
+  página, e separar ilustração de papel exigiria análise de layout que este
+  projeto não faz. O texto vem completo; as imagens, não.
+* A qualidade do OCR é a do Tesseract: acentos e páginas de sumário saem
+  embaralhados. O sumário do PDF é descartado de qualquer forma, mas vale
+  revisar os títulos antes de enviar.

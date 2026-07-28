@@ -74,6 +74,7 @@ class Block:
     image: Optional[bytes] = None
     image_ext: str = "png"
     column: int = 0
+    full_page: bool = False   # imagem que cobre a página: digitalização do papel
 
 
 @dataclass

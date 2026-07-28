@@ -31,10 +31,16 @@ CHAPTER_RE = re.compile(
 # página costuma vir em outro bloco, então não exigimos que ele esteja na linha.
 TOC_LEADER_RE = re.compile(r"(?:[.·]\s?){4,}")
 TOC_TAIL_RE = re.compile(r"\s{2,}\d{1,4}\s*$")
+# O OCR destrói o pontilhado ("cio Seiwa 3"), mas o número de página no fim de
+# uma linha curta sobrevive. Só conta como indício junto com algum pontilhado.
+TOC_SHORT_TAIL_RE = re.compile(r"\s\d{1,3}\s*$")
 NOTE_MARKER_RE = re.compile(r"^\s*(\[?\d{1,3}\]?[.)]?|\*{1,3})\s+\S")
 # PDFs com fontes exóticas devolvem caracteres de controle e substitutos soltos.
 _CONTROL_RE = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\ud800-\udfff￾￿]")
 SENTENCE_END_RE = re.compile(r"[.!?…:;»”\"')\]]$")
+# Fim de parágrafo de verdade. Dois-pontos e ponto-e-vírgula não entram: eles
+# terminam uma oração, não o parágrafo, e o OCR corta linhas justamente aí.
+PARAGRAPH_END_RE = re.compile(r"[.!?…][\"'»”’)\]]?$")
 _WS_RE = re.compile(r"[ \t ]+")
 
 
@@ -45,6 +51,17 @@ def sanitize(text: str) -> str:
     derruba a geração do arquivo inteiro.
     """
     return _CONTROL_RE.sub("", text or "")
+
+
+def _fold(text: str) -> str:
+    """Reduz o texto ao esqueleto comparável: sem acentos, pontuação nem caixa.
+
+    O OCR erra acentos com frequência ("CAPITULO" por "CAPÍTULO"), então
+    comparar título corrente com título do corpo exige ignorá-los.
+    """
+    decomposed = unicodedata.normalize("NFKD", text)
+    without_marks = "".join(c for c in decomposed if not unicodedata.combining(c))
+    return re.sub(r"\W+", "", without_marks).lower()
 
 
 def _clean(text: str) -> str:
@@ -233,14 +250,25 @@ def _drop_source_toc(paras: List[_Para]) -> Tuple[List[_Para], int]:
 
     Elas só listam números de página, que não existem em um e-book — e o
     sumário navegável do arquivo final é gerado a partir dos títulos. Uma página
-    é considerada sumário quando tem quatro ou mais linhas com pontilhado ou
+    é considerada sumário quando tem três ou mais linhas com pontilhado ou
     terminadas em número de página.
     """
-    per_page: Dict[int, int] = collections.Counter()
+    def _entry(text: str) -> bool:
+        if TOC_LEADER_RE.search(text) or TOC_TAIL_RE.search(text):
+            return True
+        return len(text) < 70 and bool(TOC_SHORT_TAIL_RE.search(text))
+
+    leaders: Dict[int, int] = collections.Counter()
+    entries: Dict[int, int] = collections.Counter()
     for p in paras:
-        if TOC_LEADER_RE.search(p.text) or TOC_TAIL_RE.search(p.text):
-            per_page[p.page] += 1
-    toc_pages = {page for page, count in per_page.items() if count >= 4}
+        if TOC_LEADER_RE.search(p.text):
+            leaders[p.page] += 1
+        if _entry(p.text):
+            entries[p.page] += 1
+
+    # Exigir pelo menos um pontilhado evita confundir prosa que por acaso
+    # termine em número com uma página de sumário.
+    toc_pages = {page for page, count in entries.items() if count >= 3 and leaders[page] >= 1}
     if not toc_pages:
         return paras, 0
 
@@ -248,7 +276,7 @@ def _drop_source_toc(paras: List[_Para]) -> Tuple[List[_Para], int]:
     for p in paras:
         if p.page in toc_pages:
             text = p.text.strip()
-            is_entry = bool(TOC_LEADER_RE.search(text) or TOC_TAIL_RE.search(text))
+            is_entry = _entry(text)
             # Números de página soltos e fragmentos curtos são o resto do sumário.
             if is_entry or len(text) < 80:
                 continue
@@ -264,28 +292,68 @@ def _drop_running_titles(paras: List["_Para"]) -> Tuple[List["_Para"], int]:
     muda ao longo do livro — mas sempre coincide com um título que existe no
     corpo. Repetição + posição na margem é o que identifica esses casos.
     """
-    normalize = lambda text: re.sub(r"\W+", "", text).lower()  # noqa: E731
-    counts: Dict[str, int] = collections.Counter(normalize(p.text) for p in paras)
+    counts: Dict[str, int] = collections.Counter(_fold(p.text) for p in paras)
     kept: List["_Para"] = []
     dropped = 0
     for p in paras:
         in_margin = p.top < p.page_height * 0.09 or p.bottom > p.page_height * 0.93
-        if in_margin and len(p.lines) <= 2 and counts[normalize(p.text)] > 1:
+        if in_margin and len(p.lines) <= 2 and counts[_fold(p.text)] > 1:
             dropped += 1
             continue
         kept.append(p)
     return kept, dropped
 
 
+def _merge_split_headings(paras: List["_Para"], body_size: float) -> List["_Para"]:
+    """Junta o título que o PDF quebrou em duas linhas independentes.
+
+    "Capítulo 2 - As colunas" virar dois títulos rende duas entradas no sumário
+    do Kindle para o mesmo capítulo. Só juntamos o que a geometria confirma:
+    mesma página, mesmo corpo de letra, linhas coladas e sobrepostas na
+    horizontal, com a primeira sem terminar frase.
+    """
+    merged: List["_Para"] = []
+    for p in paras:
+        if merged:
+            prev = merged[-1]
+            # Empilhados: título que ocupa duas linhas.
+            gap = p.top - prev.bottom
+            empilhados = 0 <= gap <= p.size * 1.2 and min(prev.x1, p.x1) > max(prev.x0, p.x0)
+            # Lado a lado: o OCR partiu a mesma linha em dois pedaços.
+            altura = min(prev.bottom - prev.top, p.bottom - p.top)
+            mesma_linha = (min(prev.bottom, p.bottom) - max(prev.top, p.top)) > altura * 0.5
+            ao_lado = mesma_linha and 0 <= (p.x0 - prev.x1) < p.size * 3
+            if (
+                prev.page == p.page
+                and prev.block.column == p.block.column
+                # Tolerância relativa: o OCR estima o corpo da letra a partir do
+                # bitmap e varia de um pedaço para outro da mesma linha.
+                and abs(prev.size - p.size) <= max(prev.size, p.size) * 0.15
+                and (empilhados or ao_lado)
+                and not PARAGRAPH_END_RE.search(prev.text)
+                and _looks_like_heading(prev, body_size)
+                and _looks_like_heading(p, body_size)
+            ):
+                merged[-1] = _Para(prev.lines + p.lines, prev.block, prev.page_width, prev.page_height)
+                continue
+        merged.append(p)
+    return merged
+
+
 def _merge_continuations(elements: List[Element]) -> List[Element]:
-    """Recompõe parágrafos partidos por quebra de página ou de coluna."""
+    """Recompõe parágrafos partidos por quebra de página, de coluna ou pelo OCR.
+
+    Em PDF digitalizado o reconhecimento devolve cada linha — às vezes cada
+    pedaço de linha — como um bloco solto. O critério é o mesmo que vale para a
+    quebra de página: se o trecho anterior não terminou a frase e o seguinte
+    começa em minúscula, é o mesmo parágrafo.
+    """
     merged: List[Element] = []
     for el in elements:
         if (
             merged
             and el.kind == "paragraph"
             and merged[-1].kind == "paragraph"
-            and merged[-1].page != el.page
             and merged[-1].runs
             and el.runs
         ):
@@ -294,7 +362,7 @@ def _merge_continuations(elements: List[Element]) -> List[Element]:
             continues = (
                 prev_text
                 and next_text
-                and not SENTENCE_END_RE.search(prev_text)
+                and not PARAGRAPH_END_RE.search(prev_text)
                 and not next_text[:1].isupper()
                 and not next_text[:1].isdigit()
             )
@@ -368,6 +436,7 @@ def build_document(
 
     paras, toc_pages_dropped = _drop_source_toc(paras)
     paras, running_titles_dropped = _drop_running_titles(paras)
+    paras = _merge_split_headings(paras, body_size)
 
     heading_paras = [p for p in paras if _looks_like_heading(p, body_size)]
     heading_ids = {id(p) for p in heading_paras}
@@ -446,6 +515,9 @@ def build_document(
         for el in elements
         if el.kind == "image" or (len(el.text.strip()) > 2 and el.text.strip())
     ]
+
+    # Uma "nota" de um caractere é ruído de OCR, não nota de rodapé.
+    notes = [note for note in notes if len(note.text.strip()) > 2]
 
     doc.elements = elements
     doc.notes = notes

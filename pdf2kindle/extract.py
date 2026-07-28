@@ -41,6 +41,7 @@ class ExtractionResult:
         self.warnings: List[str] = []
         self.text_chars: int = 0
         self.scanned: bool = False
+        self.full_page_images_dropped: int = 0
 
 
 def _span_from_dict(raw: dict) -> Optional[Span]:
@@ -226,15 +227,19 @@ def extract(path: str, keep_images: bool = True) -> ExtractionResult:
                     # Descarta fios, marcas d'água e ícones minúsculos.
                     if w < 40 or h < 40 or (w * h) < (width * height * 0.01):
                         continue
-                    blocks.append(
-                        Block(
-                            kind="image",
-                            bbox=bbox,  # type: ignore[arg-type]
-                            page=page_no,
-                            image=data,
-                            image_ext=raw_block.get("ext", "png"),
-                        )
+                    block = Block(
+                        kind="image",
+                        bbox=bbox,  # type: ignore[arg-type]
+                        page=page_no,
+                        image=data,
+                        image_ext=raw_block.get("ext", "png"),
                     )
+                    # Imagem que cobre a página inteira é a digitalização do
+                    # papel. Se o documento tiver camada de texto, ela apenas
+                    # duplica o conteúdo e multiplica o tamanho do arquivo — mas
+                    # isso só se sabe depois de ler o documento todo.
+                    block.full_page = (w * h) > (width * height * 0.8)
+                    blocks.append(block)
                     continue
 
                 block_lines: List[Line] = []
@@ -255,6 +260,7 @@ def extract(path: str, keep_images: bool = True) -> ExtractionResult:
                     result.text_chars += len(text.strip())
                 if block_lines:
                     blocks.append(Block(kind="text", bbox=bbox, page=page_no, lines=block_lines))  # type: ignore[arg-type]
+
 
             splits = _detect_column_splits(blocks, width, height)
             _assign_columns(blocks, splits)
@@ -289,6 +295,14 @@ def extract(path: str, keep_images: bool = True) -> ExtractionResult:
                         max(l.bbox[3] for l in kept),
                     )
                     flat.append(block)
+
+        # Documento com camada de texto: a digitalização da página só duplicaria
+        # o que já está escrito. Sem texto (PDF digitalizado que não passou por
+        # OCR), ela é o único conteúdo que existe e precisa ser preservada.
+        if result.text_chars / max(1, result.page_count) >= 200:
+            before = len(flat)
+            flat = [b for b in flat if not (b.kind == "image" and b.full_page)]
+            result.full_page_images_dropped = before - len(flat)
 
         flat = _dedupe_images(flat, result.page_count)
         result.blocks = flat
