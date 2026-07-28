@@ -11,6 +11,8 @@ ICONE = os.path.join(RAIZ, "assets", "pdf2kindle.ico")
 # O python-docx abre um .docx de modelo em tempo de execução; sem estes dados
 # o executável só falha na hora de salvar o arquivo, não ao iniciar.
 DADOS = collect_data_files("docx")
+# o mesmo ícone do executável serve à janela (canto superior e alt-tab)
+DADOS += [(ICONE, "assets")]
 
 # A interface web não entra no executável: quem usa a janela não precisa dela.
 EXCLUIR = ["flask", "werkzeug", "jinja2", "click", "itsdangerous", "pytest",

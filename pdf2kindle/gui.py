@@ -41,6 +41,25 @@ def _melhora_nitidez_no_windows() -> None:
         pass
 
 
+def _caminho_do_icone() -> Optional[str]:
+    """Dentro do executável os dados ficam na pasta temporária do PyInstaller."""
+    base = getattr(sys, "_MEIPASS", None) or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    caminho = os.path.join(base, "assets", "pdf2kindle.ico")
+    return caminho if os.path.exists(caminho) else None
+
+
+def _usa_icone(raiz: tk.Tk) -> None:
+    """Ícone da janela e da barra de tarefas. Só o Windows aceita .ico aqui,
+    e o app não pode deixar de abrir por causa disso."""
+    caminho = _caminho_do_icone()
+    if not caminho:
+        return
+    try:
+        raiz.iconbitmap(caminho)
+    except tk.TclError:
+        pass
+
+
 def abrir_pasta(caminho: str) -> None:
     """Abre o explorador de arquivos na pasta do resultado."""
     pasta = os.path.dirname(os.path.abspath(caminho))
@@ -294,9 +313,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     raiz = tk.Tk()
     try:
-        raiz.call("ttk::style", "theme", "use", "vista")
+        raiz.call("ttk::style", "theme", "use", "vista")  # aparência nativa do Windows
     except tk.TclError:
         pass
+    _usa_icone(raiz)
     Aplicativo(raiz, [a for a in argumentos if a.lower().endswith(".pdf")])
     raiz.mainloop()
     return 0
