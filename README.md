@@ -27,7 +27,7 @@ papel antes de escrever o Word:
 | Página de duas ou três colunas | Detecta as faixas vazias e lê coluna a coluna |
 | Sumário do PDF (com pontilhado e números) | Descarta e gera um sumário navegável próprio |
 | Nota de rodapé no pé da página | Tira do meio do texto e reúne no fim, com a página de origem |
-| PDF digitalizado, sem camada de texto | Avisa e roda OCR (se o `ocrmypdf` estiver instalado) |
+| PDF digitalizado, sem camada de texto | Reconhece o texto com o OCR embutido, sem instalar nada |
 | Texto do OCR picado em fragmentos soltos | Remonta parágrafos e títulos partidos, na vertical e na horizontal |
 | Imagem da página inteira sob o texto do OCR | Descarta (duplicaria o texto e multiplicaria o tamanho) |
 
@@ -62,11 +62,11 @@ Sem clonar o repositório (não precisa de Git):
 pip install https://github.com/brunobracco-hash/Mobile/archive/refs/heads/claude/pdf-word-kindle-converter-2xnrir.zip
 ```
 
-OCR é opcional e só é usado em PDFs digitalizados:
+O OCR não exige nenhum programa: o motor de reconhecimento vem dentro do
+PyMuPDF. Só os dados de idioma ficam fora do repositório (são binários):
 
 ```bash
-pip install ocrmypdf
-sudo apt install tesseract-ocr tesseract-ocr-por ghostscript
+python scripts/fetch_tessdata.py     # ~6 MB, português e inglês
 ```
 
 ### Windows: aplicativo com janela (.exe)
@@ -110,9 +110,8 @@ pdf2kindle-web
 Se o PowerShell recusar a ativação do ambiente, libere os scripts do usuário
 com `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
 
-Para OCR no Windows, além de `pip install ocrmypdf`, instale os dois programas
-que ele chama: [Tesseract](https://github.com/UB-Mannheim/tesseract/wiki)
-(marcando o idioma português) e [Ghostscript](https://ghostscript.com/releases/gsdnld.html).
+Para OCR, rode `py scripts\fetch_tessdata.py` depois de clonar — no executável
+os dados já vêm embutidos.
 
 ## Uso — linha de comando
 
@@ -170,9 +169,12 @@ Um PDF que é só a fotografia das páginas exige dois cuidados a mais, e ambos
 estão cobertos:
 
 ```bash
-sudo apt install ocrmypdf tesseract-ocr-por
 python -m pdf2kindle livro-escaneado.pdf --ocr auto --ocr-lang por
 ```
+
+Nada precisa ser instalado: o Tesseract está ligado estaticamente dentro do
+PyMuPDF, e os dados de idioma acompanham o projeto (no executável do Windows,
+dentro do próprio `.exe`).
 
 O reconhecimento devolve o texto quebrado de um jeito que PDF digital nunca
 quebra — cada linha, e às vezes cada pedaço de linha, vira um bloco solto —, e
@@ -185,13 +187,17 @@ Medido no PDF de amostra digitalizado a 200 dpi, com inclinação, ruído e
 compressão JPEG: **6 títulos e 9 parágrafos, contra 6 títulos e 7 parágrafos do
 mesmo livro em PDF digital** — a mesma estrutura, e 0,04 MB em vez de 0,83 MB.
 
-Sem o `ocrmypdf` instalado, o aviso é explícito e as imagens das páginas são
-preservadas: um livro em fac-símile ainda é melhor do que um arquivo vazio.
+Se os dados de idioma faltarem, o aviso é explícito e as imagens das páginas
+são preservadas: um livro em fac-símile ainda é melhor do que um arquivo vazio.
+
+O `auto` decide pelo documento inteiro, não página a página: em um PDF digital
+existem páginas quase sem texto — as de figura, as de abertura — e reconhecer
+essas produziria apenas ruído.
 
 ## Testes
 
 ```bash
-pytest -q      # 61 testes
+pytest -q      # 77 testes
 ```
 
 A suíte gera um PDF de teste com todos os defeitos típicos (cabeçalho repetido,

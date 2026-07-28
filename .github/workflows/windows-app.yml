@@ -27,6 +27,9 @@ jobs:
           pip install -e ".[dev]"
           pip install pyinstaller
 
+      - name: Baixar os dados de idioma do OCR
+        run: python scripts/fetch_tessdata.py
+
       - name: Rodar os testes no Windows
         run: pytest -q
 
@@ -47,6 +50,15 @@ jobs:
           $tamanho = (Get-Item amostra.docx).Length
           Write-Host "amostra.docx: $tamanho bytes"
           if ($tamanho -lt 10000) { throw "o .docx saiu pequeno demais para estar correto" }
+
+      - name: Reconhecer um livro escaneado com o executável
+        shell: pwsh
+        run: |
+          python tests/make_scan.py amostra.pdf escaneado.pdf
+          .\dist\pdf2kindle-cli.exe escaneado.pdf --ocr force --ocr-lang por
+          if (-not (Test-Path escaneado.docx)) { throw "o OCR não gerou o .docx" }
+          python -c "import docx,sys; t=' '.join(p.text for p in docx.Document('escaneado.docx').paragraphs); sys.exit(0 if 'tipografia de um livro impresso' in t else 1)"
+          Write-Host "o executável reconheceu o texto sem nada instalado na máquina"
 
       - name: Conferir que o app de janela abre
         shell: pwsh

@@ -64,11 +64,12 @@ def test_notebook_esta_sincronizado_com_o_gerador(tmp_path):
         assert a.read() == b.read(), "rode: python scripts/build_colab_notebook.py"
 
 
-def test_celula_de_ocr_nao_engole_o_erro(notebook):
-    """Silenciar o apt fazia a falha reaparecer como 'command not found'."""
-    ocr = [c for c in notebook["cells"] if "ocrmypdf" in "".join(c["source"])]
-    assert ocr, "a célula de OCR sumiu do notebook"
-    codigo = "".join(ocr[0]["source"])
-    assert "/dev/null" not in codigo, "a saída da instalação precisa ficar visível"
-    assert "apt-get -qq update" in codigo, "sem update, o apt não acha os pacotes"
-    assert "shutil.which" in codigo, "a célula precisa conferir se instalou mesmo"
+def test_notebook_nao_pede_instalacao_de_ocr(notebook):
+    """O reconhecimento passou a vir embutido: qualquer apt-get aqui seria um
+    passo a mais para quem está no celular — e foi justamente o que quebrou
+    quando o OCR dependia de programas externos."""
+    codigo = "".join("".join(c["source"]) for c in notebook["cells"])
+    assert "apt-get" not in codigo
+    assert "ocrmypdf" not in codigo
+    assert "tesseract" not in codigo.lower()
+    assert "reconhecer" in codigo, "o notebook precisa oferecer o OCR nas opções"

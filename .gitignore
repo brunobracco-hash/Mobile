@@ -9,3 +9,4 @@ dist/
 *.docx
 !tests/**/*.docx
 sample.pdf
+assets/tessdata/

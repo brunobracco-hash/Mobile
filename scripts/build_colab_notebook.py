@@ -29,34 +29,14 @@ INSTALL = f"""#@title Passo 1 — Instalar (demora ~1 minuto) {{ display-mode: "
 print("Pronto. Pode ir para o passo 2.")
 """
 
-OCR = '''#@title Passo 2 (opcional) — Só se o livro for escaneado { display-mode: "form" }
-# Um PDF escaneado é a fotografia das páginas: não tem texto, só imagem.
-# Se o seu PDF é um e-book comum, PULE esta célula e vá para o passo 3.
-# Demora ~2 minutos. A saída fica à mostra de propósito: se a instalação falhar,
-# o motivo precisa aparecer aqui, e não virar um "command not found" adiante.
-!apt-get -qq update
-!apt-get -qq install -y tesseract-ocr tesseract-ocr-por ghostscript
-!pip install -q ocrmypdf
+OCR_NOTA = """### Livro escaneado
 
-import shutil
-import subprocess
+Não precisa instalar nada: o reconhecimento de texto vem dentro do próprio
+conversor. Basta escolher **sempre reconhecer** no passo 3 (ou deixar em
+*detectar sozinho*, que liga o OCR quando o PDF não tem texto).
+"""
 
-if shutil.which("ocrmypdf") and shutil.which("tesseract"):
-    # o ocrmypdf 17 imprime a versão em stderr, o 15 em stdout
-    checagem = subprocess.run(["ocrmypdf", "--version"], capture_output=True, text=True)
-    versao = (checagem.stdout + checagem.stderr).strip()
-    idiomas = subprocess.run(["tesseract", "--list-langs"], capture_output=True, text=True).stdout
-    print(f"OCR pronto (ocrmypdf {versao}).")
-    print("português disponível:", "por" in idiomas)
-else:
-    faltando = [p for p in ("ocrmypdf", "tesseract") if not shutil.which(p)]
-    print("Não consegui instalar:", ", ".join(faltando))
-    print("Leia o erro acima e rode a célula de novo — costuma ser falha temporária.")
-    print("Se insistir, dá para converter mesmo assim: no passo 4 escolha")
-    print("'nunca reconhecer'. O texto não virá, mas as páginas em imagem sim.")
-'''
-
-UPLOAD = """#@title Passo 3 — Enviar o PDF { display-mode: "form" }
+UPLOAD = """#@title Passo 2 — Enviar o PDF { display-mode: "form" }
 from google.colab import files
 
 enviados = files.upload()
@@ -64,7 +44,7 @@ for nome in enviados:
     print("recebido:", nome)
 """
 
-CONVERT = '''#@title Passo 4 — Converter e baixar { display-mode: "form" }
+CONVERT = '''#@title Passo 3 — Converter e baixar { display-mode: "form" }
 titulo = ""  #@param {type:"string"}
 autor = ""  #@param {type:"string"}
 notas_de_rodape = "reunir no fim"  #@param ["reunir no fim", "manter onde estão", "descartar"]
@@ -93,7 +73,7 @@ opcoes = Options(
 
 pdfs = sorted(glob.glob("*.pdf"))
 if not pdfs:
-    print("Nenhum PDF por aqui. Volte ao passo 3 e envie o arquivo.")
+    print("Nenhum PDF por aqui. Volte ao passo 2 e envie o arquivo.")
 
 for pdf in pdfs:
     saida = os.path.splitext(pdf)[0] + ".docx"
@@ -158,7 +138,7 @@ def build(path: str) -> str:
         "cells": [
             markdown(INTRO),
             code(INSTALL),
-            code(OCR),
+            markdown(OCR_NOTA),
             code(UPLOAD),
             code(CONVERT),
             markdown(FINAL),

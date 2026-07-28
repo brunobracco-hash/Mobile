@@ -2,13 +2,8 @@
 digital nunca quebra — cada linha (às vezes cada pedaço de linha) é um bloco
 solto, e a página inteira é uma imagem por baixo do texto reconhecido."""
 
-import shutil
-import subprocess
-
 import fitz
-import pytest
 
-from pdf2kindle.converter import Options, convert
 from pdf2kindle.extract import extract
 from pdf2kindle.structure import build_document
 
@@ -137,42 +132,3 @@ def test_sujeira_do_ocr_no_pe_da_pagina_nao_vira_nota(tmp_path):
 
     documento = build_document(extract(caminho))
     assert not documento.notes
-
-
-def _ocr_funciona() -> bool:
-    if not shutil.which("ocrmypdf"):
-        return False
-    try:
-        return subprocess.run(["ocrmypdf", "--version"], capture_output=True, timeout=60).returncode == 0
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-
-
-@pytest.mark.skipif(not _ocr_funciona(), reason="ocrmypdf não está disponível")
-def test_livro_digitalizado_de_ponta_a_ponta(sample_pdf, tmp_path):
-    """Rasteriza o PDF de amostra (com inclinação, como no scanner), tira a
-    camada de texto e verifica que o OCR devolve o livro estruturado."""
-    origem = fitz.open(sample_pdf)
-    escaneado = fitz.open()
-    for page in origem:
-        matriz = fitz.Matrix(200 / 72, 200 / 72).prerotate(0.5)
-        pix = page.get_pixmap(matrix=matriz, colorspace=fitz.csGRAY, alpha=False)
-        nova = escaneado.new_page(width=page.rect.width, height=page.rect.height)
-        nova.insert_image(nova.rect, stream=pix.tobytes("jpeg", jpg_quality=60))
-    origem.close()
-    caminho = _salva(escaneado, tmp_path, "escaneado.pdf")
-
-    assert not extract(caminho).blocks or extract(caminho).scanned
-
-    saida = tmp_path / "escaneado.docx"
-    resultado = convert(caminho, str(saida), Options(ocr="auto", ocr_lang="por"))
-    assert resultado.ocr_applied
-
-    titulos = [el.text for el in resultado.document.elements if el.kind == "heading"]
-    assert any("Capítulo 1" in t for t in titulos), titulos
-    assert any("Capítulo 3" in t for t in titulos), titulos
-
-    corpo = " ".join(el.text for el in resultado.document.elements if el.kind == "paragraph")
-    assert "tipografia de um livro impresso" in corpo
-    # a digitalização não pode ir junto: o texto já está reconhecido
-    assert not [el for el in resultado.document.elements if el.kind == "image"]

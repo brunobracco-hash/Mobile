@@ -22,7 +22,7 @@ from typing import List, Optional
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from .converter import Options, convert
+from .converter import Options, convert, ocr_disponivel
 
 TITULO = "PDF → Word para Kindle"
 NOTAS = {"reunir no fim": "end", "manter onde estão": "inline", "descartar": "drop"}
@@ -177,6 +177,9 @@ class Aplicativo(ttk.Frame):
         self.botao_pasta = ttk.Button(linha, text="Abrir pasta", command=self._abrir_pasta, state="disabled")
         self.botao_pasta.grid(row=0, column=2)
 
+        self.andamento = ttk.Label(self, text="", foreground="#666")
+        self.andamento.grid(row=4, column=0, sticky="w", pady=(6, 0))
+
     def _monta_relatorio(self) -> None:
         caixa = ttk.LabelFrame(self, text="Relatório", padding=6)
         caixa.grid(row=3, column=0, sticky="nsew", pady=(10, 0))
@@ -193,6 +196,11 @@ class Aplicativo(ttk.Frame):
             "Escolha um ou mais PDFs e clique em Converter.\n"
             "O .docx é salvo na mesma pasta do PDF, pronto para enviar ao Kindle.\n"
         )
+        if not ocr_disponivel():
+            self._escreve(
+                "\nOs dados de idioma do OCR não foram encontrados: livro escaneado\n"
+                "sairá sem texto. (No executável eles vêm embutidos.)\n"
+            )
 
     # ----------------------------------------------------------------- ações
     def _escolher(self) -> None:
@@ -260,8 +268,13 @@ class Aplicativo(ttk.Frame):
         """Roda fora da thread da interface: só publica eventos na fila."""
         for caminho in arquivos:
             saida = os.path.splitext(caminho)[0] + ".docx"
+            nome = os.path.basename(caminho)
+
+            def anuncia(pagina: int, total: int, _nome=nome) -> None:
+                self.eventos.put(("pagina", _nome, pagina, total))
+
             try:
-                resultado = convert(caminho, saida, opcoes)
+                resultado = convert(caminho, saida, opcoes, on_page=anuncia)
             except Exception as erro:  # noqa: BLE001 - a janela não pode morrer
                 self.eventos.put(("erro", os.path.basename(caminho), f"{erro}", traceback.format_exc()))
                 continue
@@ -276,7 +289,10 @@ class Aplicativo(ttk.Frame):
         try:
             while True:
                 evento = self.eventos.get_nowait()
-                if evento[0] == "ok":
+                if evento[0] == "pagina":
+                    _, nome, pagina, total = evento
+                    self.andamento.configure(text=f"{nome}: lendo página {pagina} de {total}")
+                elif evento[0] == "ok":
                     _, saida, resultado = evento
                     s = resultado.document.stats
                     self._escreve(f"{os.path.basename(saida)}\n")
@@ -295,6 +311,7 @@ class Aplicativo(ttk.Frame):
                     self._escreve(f"{nome}: não consegui converter — {mensagem}\n")
                     self._avanca()
                 elif evento[0] == "fim":
+                    self.andamento.configure(text="")
                     self.convertendo = False
                     self.botao.configure(state="normal", text="Converter")
                     if self.ultimo_resultado:

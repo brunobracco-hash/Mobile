@@ -12,9 +12,12 @@ Nada aqui decide o que é título ou parágrafo — isso é trabalho de structur
 from __future__ import annotations
 
 import collections
+import glob
 import hashlib
+import os
 import re
-from typing import Dict, List, Optional, Tuple
+import sys
+from typing import Callable, Dict, List, Optional, Tuple
 
 import fitz  # PyMuPDF
 
@@ -27,9 +30,77 @@ FLAG_BOLD = 1 << 4
 HEADER_ZONE = 0.075
 FOOTER_ZONE = 0.075
 
+# Abaixo disso, a página não tem texto de verdade — é imagem de papel.
+OCR_MIN_CHARS = 100
+
 _DIGITS_RE = re.compile(r"\d+")
 _ROMAN_RE = re.compile(r"^[ivxlcdm]+$", re.I)
 _WS_RE = re.compile(r"\s+")
+
+
+def _documento_tem_texto(doc, amostra: int = 10) -> bool:
+    """Decide pelo documento inteiro, não por página.
+
+    Em um PDF digital existem páginas quase sem texto — as de figura, as de
+    abertura de parte. Reconhecê-las produz apenas ruído: o OCR não tem o que
+    ler ali. Por isso 'auto' só liga o reconhecimento quando o documento como
+    um todo não tem camada de texto.
+    """
+    total = doc.page_count
+    if not total:
+        return False
+    indices = sorted({int(i * (total - 1) / max(1, min(amostra, total) - 1)) for i in range(min(amostra, total))})
+    caracteres = sum(len(doc[i].get_text().strip()) for i in indices)
+    return caracteres / len(indices) >= OCR_MIN_CHARS
+
+
+def tessdata_dir() -> Optional[str]:
+    """Onde estão os dados de idioma do OCR.
+
+    O motor de reconhecimento vem dentro do PyMuPDF; o que precisa ser
+    encontrado são os .traineddata. No executável eles viajam junto; fora dele,
+    valem a variável de ambiente, a pasta do projeto e os locais do sistema.
+    """
+    candidatos = [os.environ.get("TESSDATA_PREFIX")]
+    empacotado = getattr(sys, "_MEIPASS", None)
+    if empacotado:
+        candidatos.append(os.path.join(empacotado, "tessdata"))
+    raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    candidatos.append(os.path.join(raiz, "assets", "tessdata"))
+    candidatos += [
+        "/usr/share/tesseract-ocr/5/tessdata",
+        "/usr/share/tesseract-ocr/4.00/tessdata",
+        "/usr/share/tessdata",
+        "/usr/local/share/tessdata",
+        r"C:\Program Files\Tesseract-OCR\tessdata",
+    ]
+    for candidato in candidatos:
+        if candidato and glob.glob(os.path.join(candidato, "*.traineddata")):
+            return candidato
+    return None
+
+
+def idiomas_disponiveis(pasta: str) -> List[str]:
+    return sorted(
+        os.path.splitext(os.path.basename(caminho))[0]
+        for caminho in glob.glob(os.path.join(pasta, "*.traineddata"))
+    )
+
+
+def _resolve_idiomas(pedidos: str, pasta: str, avisos: List[str]) -> str:
+    """Mantém só os idiomas que existem, para o OCR não falhar por um ausente."""
+    disponiveis = set(idiomas_disponiveis(pasta))
+    escolhidos = [i for i in pedidos.split("+") if i in disponiveis]
+    if not escolhidos:
+        alternativa = "por" if "por" in disponiveis else (sorted(disponiveis)[0] if disponiveis else "")
+        if alternativa:
+            avisos.append(f"Idioma(s) '{pedidos}' não encontrado(s) para o OCR; usando '{alternativa}'.")
+            return alternativa
+        return ""
+    faltando = [i for i in pedidos.split("+") if i not in disponiveis]
+    if faltando:
+        avisos.append(f"Sem dados de OCR para: {', '.join(faltando)}. Seguindo com {'+'.join(escolhidos)}.")
+    return "+".join(escolhidos)
 
 
 class ExtractionResult:
@@ -42,6 +113,7 @@ class ExtractionResult:
         self.text_chars: int = 0
         self.scanned: bool = False
         self.full_page_images_dropped: int = 0
+        self.ocr_pages: int = 0
 
 
 def _span_from_dict(raw: dict) -> Optional[Span]:
@@ -158,6 +230,25 @@ def _assign_columns(blocks: List[Block], splits: List[float]) -> None:
         b.column = col
 
 
+def _explode_ocr_blocks(page_dict: dict) -> dict:
+    """Transforma cada linha reconhecida em um bloco próprio.
+
+    O OCR agrupa em um mesmo bloco linhas de colunas diferentes: as linhas em si
+    saem corretas, mas o bloco atravessa a página inteira e a detecção de
+    colunas — que trabalha com blocos — não enxerga o vão. Separando linha a
+    linha, cada uma volta a ter a largura da sua coluna, e a remontagem de
+    parágrafos (que já lida com texto de OCR) refaz o resto.
+    """
+    novos = []
+    for bloco in page_dict.get("blocks", []):
+        if bloco.get("type") != 0:
+            novos.append(bloco)
+            continue
+        for linha in bloco.get("lines", []):
+            novos.append({"type": 0, "bbox": linha.get("bbox", bloco["bbox"]), "lines": [linha]})
+    return {**page_dict, "blocks": novos}
+
+
 def _dedupe_images(blocks: List[Block], page_count: int) -> List[Block]:
     """Remove logotipos e ornamentos que se repetem em muitas páginas."""
     if page_count < 4:
@@ -191,11 +282,37 @@ def _collect_running_text(pages_lines: List[List[Line]], page_heights: List[floa
     return {key for key, pages in counter.items() if len(pages) >= threshold}
 
 
-def extract(path: str, keep_images: bool = True) -> ExtractionResult:
-    """Lê o PDF e devolve blocos já na ordem de leitura, sem cabeçalho/rodapé."""
+def extract(
+    path: str,
+    keep_images: bool = True,
+    ocr: str = "off",
+    ocr_lang: str = "por+eng",
+    ocr_dpi: int = 300,
+    on_page: Optional[Callable[[int, int], None]] = None,
+) -> ExtractionResult:
+    """Lê o PDF e devolve blocos já na ordem de leitura, sem cabeçalho/rodapé.
+
+    Com `ocr='auto'`, as páginas sem texto passam pelo reconhecimento embutido
+    no PyMuPDF; com `'force'`, todas passam. `on_page` recebe (página, total) e
+    serve para dar sinal de vida — reconhecer um livro inteiro leva minutos.
+    """
     result = ExtractionResult()
+    idioma = ""
+    pasta_ocr = tessdata_dir() if ocr in ("auto", "force") else None
+    if ocr in ("auto", "force"):
+        if pasta_ocr:
+            os.environ["TESSDATA_PREFIX"] = pasta_ocr
+            idioma = _resolve_idiomas(ocr_lang, pasta_ocr, result.warnings)
+        else:
+            result.warnings.append(
+                "OCR pedido, mas os dados de idioma não foram encontrados. "
+                "Rode: python scripts/fetch_tessdata.py"
+            )
+
     doc = fitz.open(path)
     try:
+        if idioma and ocr == "auto" and _documento_tem_texto(doc):
+            idioma = ""  # o PDF já tem texto: reconhecer só acrescentaria ruído
         result.page_count = doc.page_count
         meta = doc.metadata or {}
         result.metadata = {k: (v or "").strip() for k, v in meta.items() if isinstance(v, str)}
@@ -210,7 +327,20 @@ def extract(path: str, keep_images: bool = True) -> ExtractionResult:
             result.page_sizes.append((width, height))
             page_heights.append(height)
 
-            page_dict = page.get_text("dict")
+            if on_page:
+                on_page(page_no + 1, doc.page_count)
+
+            page_dict = None
+            if idioma and (ocr == "force" or len(page.get_text().strip()) < OCR_MIN_CHARS):
+                try:
+                    textpage = page.get_textpage_ocr(language=idioma, dpi=ocr_dpi, full=True)
+                    page_dict = _explode_ocr_blocks(page.get_text("dict", textpage=textpage))
+                    result.ocr_pages += 1
+                except Exception as erro:  # noqa: BLE001 - uma página ruim não perde o livro
+                    result.warnings.append(f"OCR falhou na página {page_no + 1}: {erro}")
+            if page_dict is None:
+                page_dict = page.get_text("dict")
+
             blocks: List[Block] = []
             lines_here: List[Line] = []
 

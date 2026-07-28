@@ -14,6 +14,16 @@ DADOS = collect_data_files("docx")
 # o mesmo ícone do executável serve à janela (canto superior e alt-tab)
 DADOS += [(ICONE, "assets")]
 
+# Dados de idioma do OCR. O motor de reconhecimento já vem dentro do PyMuPDF,
+# então embutindo estes arquivos o executável reconhece livro escaneado sem
+# depender de nada instalado na máquina. Rode antes: scripts/fetch_tessdata.py
+TESSDATA = os.path.join(RAIZ, "assets", "tessdata")
+if os.path.isdir(TESSDATA):
+    DADOS += [(os.path.join(TESSDATA, nome), "tessdata")
+              for nome in os.listdir(TESSDATA) if nome.endswith(".traineddata")]
+else:
+    print("AVISO: assets/tessdata não existe — o executável sairá sem OCR embutido")
+
 # A interface web não entra no executável: quem usa a janela não precisa dela.
 EXCLUIR = ["flask", "werkzeug", "jinja2", "click", "itsdangerous", "pytest",
            "numpy", "PIL", "matplotlib", "IPython", "pandas", "setuptools"]

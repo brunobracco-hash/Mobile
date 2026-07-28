@@ -218,6 +218,10 @@ def _looks_like_heading(p: _Para, body_size: float) -> bool:
     bold_short = p.bold and ratio >= 0.97 and len(text) <= 120
     caps_short = _is_all_caps(text) and len(text) <= 90 and len(p.lines) <= 2
     numbered = bool(CHAPTER_RE.match(text)) or bool(re.match(r"^\s*\d{1,2}(\.\d{1,2}){0,2}\s+\S", text))
+    # Linha longa que ocupa a largura da mancha é corpo de texto, por maior que
+    # o OCR tenha estimado a letra — ele erra o corpo linha a linha.
+    if len(text) > 70 and (p.x1 - p.x0) > p.page_width * 0.62:
+        return False
     if not (big or bold_short or caps_short or (numbered and (p.bold or ratio >= 1.05))):
         return False
     # Frase que só começa em negrito não é título.
@@ -435,8 +439,11 @@ def build_document(
                 paras.append(p)
 
     paras, toc_pages_dropped = _drop_source_toc(paras)
-    paras, running_titles_dropped = _drop_running_titles(paras)
+    # A remontagem vem antes da comparação: o OCR parte o título corrente em
+    # pedaços ("CAPÍTULO 2" + "- AS COLUNAS") que só coincidem com o título do
+    # corpo depois de reunidos.
     paras = _merge_split_headings(paras, body_size)
+    paras, running_titles_dropped = _drop_running_titles(paras)
 
     heading_paras = [p for p in paras if _looks_like_heading(p, body_size)]
     heading_ids = {id(p) for p in heading_paras}

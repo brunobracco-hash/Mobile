@@ -35,8 +35,14 @@ def build_parser() -> argparse.ArgumentParser:
         default="end",
         help="notas de rodapé: reunir no fim (padrão), manter no meio do texto ou descartar",
     )
-    parser.add_argument("--ocr", choices=["auto", "force", "off"], default="auto", help="OCR de PDF digitalizado")
+    parser.add_argument(
+        "--ocr",
+        choices=["auto", "force", "off"],
+        default="auto",
+        help="reconhecimento de texto: automático em PDF digitalizado, sempre, ou nunca",
+    )
     parser.add_argument("--ocr-lang", default="por+eng", help="idiomas do OCR (padrão: por+eng)")
+    parser.add_argument("--ocr-dpi", type=int, default=300, help="resolução do OCR (padrão: 300)")
     parser.add_argument("--lang", default="pt-BR", help="idioma do documento (padrão: pt-BR)")
     parser.add_argument("-q", "--quiet", action="store_true", help="não imprimir o relatório")
     return parser
@@ -89,6 +95,7 @@ def main(argv: List[str] | None = None) -> int:
         footnotes=args.footnotes,
         ocr=args.ocr,
         ocr_lang=args.ocr_lang,
+        ocr_dpi=args.ocr_dpi,
         lang=args.lang,
     )
 
@@ -108,8 +115,13 @@ def main(argv: List[str] | None = None) -> int:
             destino = args.outdir or os.path.dirname(os.path.abspath(path))
             os.makedirs(destino, exist_ok=True)
             output = os.path.join(destino, base + ".docx")
+        # O OCR de um livro leva minutos: sem sinal de vida parece travado.
+        def anuncia(pagina: int, total: int, _quieto=args.quiet) -> None:
+            if not _quieto and total > 20 and pagina % 10 == 0:
+                print(f"  lendo página {pagina}/{total}", flush=True)
+
         try:
-            result = convert(path, output, options)
+            result = convert(path, output, options, on_page=anuncia)
         except Exception as exc:  # noqa: BLE001 - a CLI não deve explodir com stack trace
             print(f"falhou: {path}: {exc}", file=sys.stderr)
             failures += 1
@@ -123,7 +135,7 @@ def main(argv: List[str] | None = None) -> int:
                 "{images} imagens · {notes} notas".format(**stats)
             )
             if result.ocr_applied:
-                print("  OCR aplicado antes da extração")
+                print(f"  texto reconhecido por OCR em {result.ocr_pages} página(s)")
             for warning in result.warnings:
                 print(f"  aviso: {warning}")
     return 1 if failures else 0
