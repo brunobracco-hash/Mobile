@@ -36,6 +36,20 @@ O `.docx` é escrito seguindo o que o conversor da Amazon espera: estilos
 estilo — nunca de espaços, tabs ou parágrafos vazios —, imagens inline limitadas à
 largura do texto, e nada de tabelas, caixas de texto ou colunas.
 
+## No celular, sem instalar nada
+
+Abra o notebook no Google Colab e siga as células de cima para baixo — envio do
+PDF, conversão e download acontecem no navegador:
+
+[**pdf2kindle_colab.ipynb**](https://colab.research.google.com/github/brunobracco-hash/Mobile/blob/claude/pdf-word-kindle-converter-2xnrir/pdf2kindle_colab.ipynb)
+
+Se o link não abrir, vá em [colab.research.google.com](https://colab.research.google.com),
+aba **GitHub**, cole `https://github.com/brunobracco-hash/Mobile` e escolha o
+notebook da lista.
+
+O notebook é gerado por `scripts/build_colab_notebook.py` (e um teste garante
+que os dois não divirjam).
+
 ## Instalação
 
 ```bash
