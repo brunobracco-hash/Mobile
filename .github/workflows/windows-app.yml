@@ -1,0 +1,66 @@
+name: App do Windows
+
+# O executável é montado em uma máquina Windows de verdade: é a única forma
+# honesta de entregar um .exe testado. A suíte roda antes, no mesmo sistema,
+# porque bugs de Windows (codificação do console, caminhos) não aparecem no Linux.
+
+on:
+  push:
+    branches: ["**"]
+    paths-ignore: ["README.md"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install pyinstaller
+
+      - name: Rodar os testes no Windows
+        run: pytest -q
+
+      - name: Conferir que o ícone está sincronizado com o gerador
+        run: |
+          python scripts/build_icon.py
+          git diff --exit-code assets/pdf2kindle.ico
+
+      - name: Montar os executáveis
+        run: pyinstaller --clean --noconfirm packaging/pdf2kindle.spec
+
+      - name: Converter um PDF com o executável empacotado
+        shell: pwsh
+        run: |
+          python tests/make_sample.py amostra.pdf
+          .\dist\pdf2kindle-cli.exe amostra.pdf
+          if (-not (Test-Path amostra.docx)) { throw "o executável não gerou o .docx" }
+          $tamanho = (Get-Item amostra.docx).Length
+          Write-Host "amostra.docx: $tamanho bytes"
+          if ($tamanho -lt 10000) { throw "o .docx saiu pequeno demais para estar correto" }
+
+      - name: Conferir que o app de janela abre
+        shell: pwsh
+        run: |
+          $app = Start-Process -FilePath .\dist\pdf2kindle.exe -PassThru
+          Start-Sleep -Seconds 15
+          if ($app.HasExited) { throw "a janela fechou sozinha (código $($app.ExitCode))" }
+          Stop-Process -Id $app.Id -Force
+          Write-Host "a janela ficou aberta e respondendo"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pdf2kindle-windows
+          path: |
+            dist/pdf2kindle.exe
+            dist/pdf2kindle-cli.exe
+          retention-days: 90

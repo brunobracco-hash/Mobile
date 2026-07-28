@@ -18,7 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("inputs", nargs="+", help="arquivos PDF (aceita curingas: livros/*.pdf)")
     parser.add_argument("-o", "--output", help="arquivo .docx de saída (só com um PDF de entrada)")
-    parser.add_argument("-d", "--outdir", default=".", help="pasta de saída ao converter vários PDFs")
+    parser.add_argument("-d", "--outdir", help="pasta de saída (padrão: a mesma pasta do PDF)")
     parser.add_argument("--title", help="título do e-book (padrão: metadados do PDF)")
     parser.add_argument("--author", help="autor do e-book")
     parser.add_argument("--font", default="Georgia", help="fonte do corpo (padrão: Georgia)")
@@ -102,8 +102,12 @@ def main(argv: List[str] | None = None) -> int:
             output = args.output
         else:
             base = os.path.splitext(os.path.basename(path))[0]
-            os.makedirs(args.outdir, exist_ok=True)
-            output = os.path.join(args.outdir, base + ".docx")
+            # Sem --outdir o resultado fica ao lado do PDF: é onde quem converte
+            # espera encontrá-lo, e o diretório atual de um .exe clicado no
+            # Windows pode ser qualquer um.
+            destino = args.outdir or os.path.dirname(os.path.abspath(path))
+            os.makedirs(destino, exist_ok=True)
+            output = os.path.join(destino, base + ".docx")
         try:
             result = convert(path, output, options)
         except Exception as exc:  # noqa: BLE001 - a CLI não deve explodir com stack trace

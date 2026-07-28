@@ -69,7 +69,33 @@ pip install ocrmypdf
 sudo apt install tesseract-ocr tesseract-ocr-por ghostscript
 ```
 
-### Windows
+### Windows: aplicativo com janela (.exe)
+
+Não precisa de Python nem de terminal. O executável é montado a cada mudança
+por uma máquina Windows do GitHub Actions, que antes roda a suíte de testes,
+converte um PDF com o próprio executável e confere que a janela abre.
+
+1. Abra a aba **Actions** do repositório → workflow **App do Windows** → a
+   execução mais recente com ✅.
+2. Baixe o artefato **pdf2kindle-windows** (é um .zip).
+3. Descompacte e dê duplo clique em **pdf2kindle.exe**.
+
+Dentro do .zip vêm dois programas: `pdf2kindle.exe` (a janela) e
+`pdf2kindle-cli.exe` (linha de comando, para quem preferir). O `.docx` é salvo
+na mesma pasta do PDF.
+
+O Windows costuma mostrar um aviso do SmartScreen na primeira execução, porque
+o arquivo não tem assinatura digital paga: **Mais informações → Executar assim
+mesmo**.
+
+Para compilar você mesmo, com Python instalado:
+
+```powershell
+py -m pip install . pyinstaller
+pyinstaller --clean --noconfirm packaging/pdf2kindle.spec
+```
+
+### Windows: instalando com Python
 
 Instale o Python de [python.org](https://www.python.org/downloads/windows/)
 marcando **"Add python.exe to PATH"**. Depois, no PowerShell:

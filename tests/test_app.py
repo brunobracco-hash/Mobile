@@ -85,3 +85,28 @@ def test_relatorio_nao_quebra_em_console_cp1252(sample_pdf, tmp_path):
     console.seek(0)
     relatorio = console.buffer.getvalue().decode("cp1252")
     assert "páginas" in relatorio and "títulos" in relatorio
+
+
+def test_saida_fica_ao_lado_do_pdf(sample_pdf, tmp_path, monkeypatch):
+    """Sem --outdir, o .docx sai na pasta do PDF — não no diretório atual,
+    que num executável clicado no Windows pode ser qualquer um."""
+    import shutil
+
+    pasta_do_livro = tmp_path / "meus livros"
+    pasta_do_livro.mkdir()
+    livro = pasta_do_livro / "livro.pdf"
+    shutil.copy(sample_pdf, livro)
+
+    outro_lugar = tmp_path / "outro"
+    outro_lugar.mkdir()
+    monkeypatch.chdir(outro_lugar)
+
+    assert main([str(livro), "-q"]) == 0
+    assert (pasta_do_livro / "livro.docx").exists()
+    assert not list(outro_lugar.glob("*.docx"))
+
+
+def test_outdir_continua_mandando(sample_pdf, tmp_path):
+    destino = tmp_path / "convertidos"
+    assert main([sample_pdf, "-d", str(destino), "-q"]) == 0
+    assert (destino / "amostra.docx").exists()

@@ -22,6 +22,9 @@ dev = ["pytest>=7"]
 pdf2kindle = "pdf2kindle.cli:main"
 pdf2kindle-web = "pdf2kindle.web:main"
 
+[project.gui-scripts]
+pdf2kindle-app = "pdf2kindle.gui:main"
+
 [tool.setuptools]
 packages = ["pdf2kindle"]
 
