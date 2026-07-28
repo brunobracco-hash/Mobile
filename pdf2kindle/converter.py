@@ -45,8 +45,9 @@ def _run_ocr(path: str, lang: str, warnings: List[str]) -> str:
     """Adiciona camada de texto a um PDF digitalizado, se o ocrmypdf existir."""
     if not shutil.which("ocrmypdf"):
         warnings.append(
-            "OCR solicitado, mas o 'ocrmypdf' não está instalado. "
-            "Instale com: sudo apt install ocrmypdf tesseract-ocr-por"
+            "OCR solicitado, mas o 'ocrmypdf' não está instalado. Instale com: "
+            "pip install ocrmypdf (e o motor de reconhecimento: "
+            "sudo apt install tesseract-ocr tesseract-ocr-por ghostscript)"
         )
         return path
     out_fd, out_path = tempfile.mkstemp(suffix=".ocr.pdf")

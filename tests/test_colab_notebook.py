@@ -62,3 +62,13 @@ def test_notebook_esta_sincronizado_com_o_gerador(tmp_path):
     esperado = build(str(tmp_path / "gerado.ipynb"))
     with open(esperado, encoding="utf-8") as a, open(NOTEBOOK, encoding="utf-8") as b:
         assert a.read() == b.read(), "rode: python scripts/build_colab_notebook.py"
+
+
+def test_celula_de_ocr_nao_engole_o_erro(notebook):
+    """Silenciar o apt fazia a falha reaparecer como 'command not found'."""
+    ocr = [c for c in notebook["cells"] if "ocrmypdf" in "".join(c["source"])]
+    assert ocr, "a célula de OCR sumiu do notebook"
+    codigo = "".join(ocr[0]["source"])
+    assert "/dev/null" not in codigo, "a saída da instalação precisa ficar visível"
+    assert "apt-get -qq update" in codigo, "sem update, o apt não acha os pacotes"
+    assert "shutil.which" in codigo, "a célula precisa conferir se instalou mesmo"
