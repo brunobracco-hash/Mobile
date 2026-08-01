@@ -1,0 +1,15 @@
+{
+  "name": "leitor-atento",
+  "description": "Leitor interessado e revisor de textos não ficcionais. Avalia ritmo, clareza e acessibilidade, e aponta correções formais sem tocar no original.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Bruno Bracco"
+  },
+  "keywords": [
+    "leitura",
+    "revisão",
+    "não ficção",
+    "editorial",
+    "português"
+  ]
+}

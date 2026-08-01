@@ -1,0 +1,28 @@
+{
+  "name": "bruno-bracco",
+  "owner": {
+    "name": "Bruno Bracco"
+  },
+  "metadata": {
+    "description": "Plugins pessoais para trabalho com texto.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "leitor-atento",
+      "source": "./plugins/leitor-atento",
+      "description": "Lê livros e textos não ficcionais como um leitor inteligente e atento — ritmo, clareza, excessos, acessibilidade — e faz revisão formal apontando correções sem alterar o original.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Bruno Bracco"
+      },
+      "keywords": [
+        "leitura",
+        "revisão",
+        "não ficção",
+        "editorial",
+        "português"
+      ]
+    }
+  ]
+}
