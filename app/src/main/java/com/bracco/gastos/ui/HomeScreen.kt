@@ -60,8 +60,8 @@ import androidx.compose.ui.unit.dp
 import com.bracco.gastos.data.AppState
 import com.bracco.gastos.data.StoredExpense
 import com.bracco.gastos.data.digitsToCents
-import com.bracco.gastos.data.formatAmount
 import com.bracco.gastos.data.formatBrl
+import com.bracco.gastos.data.formatWholeReais
 import java.time.OffsetDateTime
 import java.time.YearMonth
 import java.time.ZoneId
@@ -247,10 +247,10 @@ private fun EntryCard(onAdd: (Long, String) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             OutlinedTextField(
-                value = if (digits.isEmpty()) "" else formatAmount(cents),
-                onValueChange = { typed -> digits = typed.filter { it.isDigit() }.takeLast(9) },
+                value = if (digits.isEmpty()) "" else formatWholeReais(cents),
+                onValueChange = { typed -> digits = typed.filter { it.isDigit() }.takeLast(7) },
                 label = { Text("Valor") },
-                placeholder = { Text("0,00") },
+                placeholder = { Text("0") },
                 leadingIcon = { Text("R$", style = MaterialTheme.typography.bodyMedium) },
                 singleLine = true,
                 modifier = Modifier.width(150.dp),
