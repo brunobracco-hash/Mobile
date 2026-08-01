@@ -1,0 +1,88 @@
+name: APK Android
+
+# Gera um APK instalável e publica como Release, para poder ser baixado
+# direto no celular sem precisar de um computador com Android Studio.
+on:
+  push:
+    branches: [claude/pdf-text-to-speech-app-xxdehj]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Instalar dependências
+        # O postinstall prepara os bundles do pdf.js embarcados no app.
+        run: npm ci --legacy-peer-deps
+
+      - name: Verificar tipos
+        run: npx tsc --noEmit
+
+      - name: Rodar os testes
+        run: |
+          npx playwright install --with-deps chromium
+          npx vitest run
+
+      - name: Gerar o projeto nativo
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Compilar o APK
+        # O template do Expo assina o build de release com a keystore de
+        # depuração versionada no projeto: o APK sai instalável e com
+        # assinatura estável entre builds, então uma versão nova instala por
+        # cima da anterior.
+        run: ./gradlew assembleRelease --no-daemon
+        working-directory: android
+
+      - name: Preparar o APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk vozpdf.apk
+
+      - name: Escrever as notas do Release
+        run: |
+          cat > release-notes.md <<'NOTAS'
+          APK do VozPDF pronto para instalar no Android.
+
+          ## Como instalar
+
+          1. Baixe o arquivo `vozpdf.apk` na seção **Assets**, aqui embaixo.
+          2. Abra o arquivo baixado. O Android vai pedir autorização para
+             instalar de fontes desconhecidas — é só permitir para o navegador.
+          3. Abra o app e toque em **Ajustes** para escolher a voz.
+
+          ## Escolhendo a voz
+
+          Sem chave de API, deixe **Voz do aparelho**: funciona offline e sem
+          cadastro, mas soa menos natural. Para a narração por IA, escolha
+          ElevenLabs, OpenAI ou Google Cloud e cole a chave correspondente —
+          a chave fica só no seu aparelho, no armazenamento seguro do sistema.
+          NOTAS
+          echo "" >> release-notes.md
+          echo "Compilado a partir do commit ${GITHUB_SHA}." >> release-notes.md
+
+      - name: Publicar o Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Tag fixa para que o link de download nunca mude.
+          gh release delete apk-latest --yes --cleanup-tag || true
+          gh release create apk-latest vozpdf.apk \
+            --target "${GITHUB_SHA}" \
+            --title "VozPDF — APK mais recente" \
+            --notes-file release-notes.md
