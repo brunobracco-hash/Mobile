@@ -1,6 +1,7 @@
 package com.bracco.gastos.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.stickyHeader
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -297,48 +299,89 @@ private fun ExpenseList(
         return
     }
 
+    // Um grupo por mes, do mais recente para o mais antigo. Lancamentos cuja
+    // data nao deu para interpretar caem num grupo sem mes, no fim da lista.
+    val groups = remember(visible) {
+        visible.groupBy { yearMonthOf(it.expense.createdAt) }
+            .entries
+            .sortedByDescending { it.key ?: YearMonth.of(1900, 1) }
+            .map { it.key to it.value }
+    }
+
     LazyColumn(modifier = Modifier.fillMaxSize()) {
-        items(visible, key = { it.expense.id }) { item ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .combinedClickable(
-                        onClick = {},
-                        onLongClick = { onLongPress(item) },
-                    )
-                    .padding(horizontal = 24.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = item.expense.description.ifBlank { "Sem descrição" },
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = subtitle(item),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (item.pending) {
-                    Icon(
-                        imageVector = Icons.Filled.CloudOff,
-                        contentDescription = "Aguardando envio",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                }
-                Text(
-                    text = formatBrl(item.expense.amountCents),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
+        // "monthItems" e nao "items" de proposito: o nome curto sombrearia a
+        // funcao items() do LazyColumn logo abaixo.
+        groups.forEach { (month, monthItems) ->
+            stickyHeader(key = "cabecalho-${month ?: "sem-data"}") {
+                MonthHeader(month = month, total = monthItems.sumOf { it.expense.amountCents })
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            items(monthItems, key = { it.expense.id }) { item ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .combinedClickable(
+                            onClick = {},
+                            onLongClick = { onLongPress(item) },
+                        )
+                        .padding(horizontal = 24.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = item.expense.description.ifBlank { "Sem descrição" },
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = subtitle(item),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (item.pending) {
+                        Icon(
+                            imageVector = Icons.Filled.CloudOff,
+                            contentDescription = "Aguardando envio",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text(
+                        text = formatBrl(item.expense.amountCents),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            }
         }
+    }
+}
+
+@Composable
+private fun MonthHeader(month: YearMonth?, total: Long) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 24.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = monthTitle(month),
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = formatBrl(total),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -359,12 +402,19 @@ private fun subtitle(item: StoredExpense): String {
     return if (who.isBlank()) when1 else "$when1 · $who"
 }
 
-private fun monthLabel(month: YearMonth): String {
-    val name = month.month.getDisplayName(
-        java.time.format.TextStyle.FULL,
-        java.util.Locale("pt", "BR"),
-    )
-    return "Total de $name"
+private val BR_LOCALE = java.util.Locale("pt", "BR")
+
+private fun monthName(month: YearMonth): String =
+    month.month.getDisplayName(java.time.format.TextStyle.FULL, BR_LOCALE)
+        .replaceFirstChar { it.uppercase() }
+
+private fun monthLabel(month: YearMonth): String = "Total de ${monthName(month).lowercase()}"
+
+/** Cabecalho do grupo: "Agosto 2026", ou so o mes quando e o ano corrente. */
+private fun monthTitle(month: YearMonth?): String {
+    if (month == null) return "Sem data"
+    val name = monthName(month)
+    return if (month.year == YearMonth.now().year) name else "$name ${month.year}"
 }
 
 private fun friendlyError(raw: String): String = when {
