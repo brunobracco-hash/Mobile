@@ -14,11 +14,15 @@ val localProps = Properties().apply {
     if (f.exists()) f.inputStream().use { load(it) }
 }
 
+// Um secret inexistente no GitHub Actions chega como string VAZIA, nao como
+// ausente, entao a precedencia tem que ignorar valores em branco -- senao o
+// env vazio vence o gradle.properties e o APK sai sem credenciais.
 fun config(name: String): String =
-    System.getenv(name)
-        ?: localProps.getProperty(name)
-        ?: (project.findProperty(name) as String?)
-        ?: ""
+    listOfNotNull(
+        System.getenv(name),
+        localProps.getProperty(name),
+        project.findProperty(name) as String?,
+    ).firstOrNull { it.isNotBlank() }.orEmpty()
 
 android {
     namespace = "com.bracco.gastos"
