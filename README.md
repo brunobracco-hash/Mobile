@@ -13,8 +13,8 @@ retomando exatamente de onde a leitura parou.
   à mão pelo botão PT/EN/ES no topo da tela de leitura).
 - **Narra com vozes de IA** — ElevenLabs, OpenAI ou Google Cloud — com instrução de estilo de
   audiolivro: ritmo calmo, pausas naturais na pontuação, entonação de leitura humana.
-- **Toca em segundo plano**: serviço em primeiro plano no Android e modo de áudio de fundo no iOS,
-  com play/pausa, avançar e voltar na notificação e na tela bloqueada.
+- **Toca em segundo plano**: serviço de mídia em primeiro plano no Android e modo de áudio de fundo
+  no iOS, com play/pausa e avanço na notificação e na tela bloqueada.
 - **Lembra onde parou**, em caracteres e não só em número de trecho: a posição sobrevive a
   reimportações e a mudanças no tamanho dos trechos.
 - **Guarda o áudio já gerado**: reouvir um trecho não custa nada e funciona offline.
@@ -23,9 +23,9 @@ retomando exatamente de onde a leitura parou.
 ## Como a narração funciona
 
 O texto é fatiado em trechos de ~320 caracteres, cortados em fim de frase (com tratamento de
-abreviações em pt/en/es, decimais e iniciais). Cada trecho é sintetizado em um arquivo mp3 e
-enfileirado no player nativo, com alguns trechos sempre prontos à frente para a leitura não
-engasgar na virada.
+abreviações em pt/en/es, decimais e iniciais). Cada trecho é sintetizado em um arquivo mp3 e tocado
+pelo `expo-audio`; enquanto um trecho toca, os seguintes já vão sendo sintetizados e pré-carregados,
+para a leitura não engasgar na virada.
 
 A velocidade é aplicada no player, não na síntese — trocar de 1,0x para 1,5x é instantâneo e
 reaproveita o áudio já gerado.
@@ -85,7 +85,7 @@ src/core/                 lógica pura, sem React Native — é o que os testes 
 src/services/             camada nativa
   pdf/                    WebView do pdf.js e pipeline de importação
   tts/                    síntese, cache de áudio em disco
-  player/                 fila do player, serviço de fundo, controlador
+  player/                 encadeamento dos trechos, tela bloqueada, controlador
   storage/                biblioteca, ajustes, chaves de API
 scripts/prepare-pdfjs.mjs converte o pdf.js (ESM) em scripts carregáveis na WebView
 ```
@@ -99,6 +99,15 @@ colidem no escopo global). Como o build `legacy` já publica `globalThis.pdfjsWo
 o handler na thread principal e nunca tenta criar um `Worker` — o que elimina qualquer problema de
 origem. Tudo isso é verificado pelo teste em Chromium.
 
+### Por que `expo-audio` e não um player de fila pronto
+
+A escolha natural seria o `react-native-track-player`, que traz fila e controles de mídia prontos.
+Ele não compila contra o React Native 0.86 (erro de nulidade em `MusicModule.kt`, na versão 4.1.2),
+e a versão 5 ainda está em alfa. O `expo-audio` cobre o mesmo terreno com garantia de compatibilidade
+com o SDK: no Android roda num `MediaSessionService` em primeiro plano e no iOS sob o modo de fundo
+`audio`. O que ele não tem é fila nativa com controle de tela bloqueada — por isso o encadeamento
+dos trechos é feito no `PlaybackController`, que troca a fonte do player ao fim de cada trecho.
+
 ## Limitações conhecidas
 
 - **PDFs digitalizados** (só imagens) não têm texto para narrar. O app detecta e avisa na
@@ -107,3 +116,5 @@ origem. Tudo isso é verificado pelo teste em Chromium.
   de extração já a aceita (`extract(id, senha)`).
 - A **voz do aparelho** não tem controles na tela bloqueada, porque não existe arquivo de áudio
   para o player de mídia expor.
+- Os controles da tela bloqueada trazem play/pausa e avanço dentro do trecho atual; pular trechos
+  é feito na tela do app.

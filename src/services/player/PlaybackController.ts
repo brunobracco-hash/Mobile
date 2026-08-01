@@ -1,4 +1,11 @@
-import TrackPlayer, { Event, State, type Track } from 'react-native-track-player';
+import {
+  createAudioPlayer,
+  preload,
+  requestNotificationPermissionsAsync,
+  setAudioModeAsync,
+  type AudioPlayer,
+  type AudioStatus,
+} from 'expo-audio';
 import * as Speech from 'expo-speech';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 
@@ -14,15 +21,8 @@ import { saveProgress } from '../storage/library';
 import { getApiKey } from '../storage/secrets';
 import { trimAudioCache } from '../tts/audioCache';
 import { synthesizeChunk } from '../tts/synthesize';
-import { ensurePlayerSetup } from './setup';
 
-export type PlaybackStatus =
-  | 'idle'
-  | 'preparing'
-  | 'playing'
-  | 'paused'
-  | 'finished'
-  | 'error';
+export type PlaybackStatus = 'idle' | 'preparing' | 'playing' | 'paused' | 'finished' | 'error';
 
 export interface PlaybackSnapshot {
   documentId: string | null;
@@ -57,20 +57,25 @@ const IDLE_SNAPSHOT: PlaybackSnapshot = {
 /** Intervalo mínimo entre duas gravações da posição de leitura. */
 const PROGRESS_SAVE_INTERVAL_MS = 5_000;
 
+/** Frequência dos eventos de posição do player, em milissegundos. */
+const STATUS_UPDATE_INTERVAL_MS = 500;
+
 /**
  * Orquestra a leitura em voz alta de um documento.
  *
  * Existem dois motores:
  *
- *  - **audio** — cada trecho é sintetizado em um arquivo mp3 e enfileirado no
- *    `react-native-track-player`. É o modo completo: toca com a tela apagada,
- *    aparece na tela bloqueada e sobrevive ao app sair da memória recente.
+ *  - **audio** — cada trecho é sintetizado em um arquivo mp3 e tocado pelo
+ *    `expo-audio`. É o modo completo: no Android o áudio roda num serviço de
+ *    mídia em primeiro plano e no iOS sob o modo de fundo `audio`, então a
+ *    leitura continua com a tela apagada e aparece na tela bloqueada.
  *  - **device** — o sistema operacional fala o texto (`expo-speech`). Funciona
  *    offline e sem chave, mas não produz arquivo, então não há controles de
  *    mídia e o iOS interrompe a fala quando o app deixa a tela.
  *
- * A posição é gravada continuamente, de modo que fechar o app no meio de uma
- * frase e reabrir horas depois retoma do mesmo ponto.
+ * Como o player toca um arquivo por vez, o encadeamento dos trechos é feito
+ * aqui: ao terminar um trecho trocamos a fonte pelo seguinte, que já foi
+ * sintetizado e pré-carregado enquanto o anterior tocava.
  */
 export class PlaybackController {
   private listeners = new Set<(snapshot: PlaybackSnapshot) => void>();
@@ -81,14 +86,18 @@ export class PlaybackController {
   private settings: AppSettings | null = null;
   private apiKey = '';
 
-  /** Índice do trecho de cada posição da fila do player. */
-  private queueChunks: number[] = [];
-  /** Invalida operações assíncronas em voo quando o documento muda. */
+  private player: AudioPlayer | null = null;
+  private playerSubscription: { remove(): void } | null = null;
+  private audioModeReady = false;
+
+  /** Arquivos já sintetizados, por índice de trecho. */
+  private readyAudio = new Map<number, string>();
+  /** Invalida operações assíncronas em voo quando o documento ou a voz mudam. */
   private generation = 0;
   private prefetching = false;
+  private advancing = false;
   private lastSavedAt = 0;
   private sleepTimer: ReturnType<typeof setTimeout> | null = null;
-  private subscriptions: Array<{ remove(): void }> = [];
   private deviceSpeaking = false;
 
   subscribe(listener: (snapshot: PlaybackSnapshot) => void): () => void {
@@ -125,8 +134,6 @@ export class PlaybackController {
     }
 
     this.generation += 1;
-    const generation = this.generation;
-
     this.document = document;
     this.chunks = chunks;
     this.settings = settings;
@@ -136,7 +143,6 @@ export class PlaybackController {
     this.apiKey = provider.requiresApiKey ? ((await getApiKey(provider.id)) ?? '') : '';
 
     const restored = resolveProgress(progress, chunks);
-
     await this.teardownPlayback();
 
     this.update({
@@ -151,13 +157,6 @@ export class PlaybackController {
       speed: settings.speed,
       message: null,
     });
-
-    if (engine === 'audio') {
-      await ensurePlayerSetup();
-      if (generation !== this.generation) return;
-      this.attachPlayerListeners();
-      await TrackPlayer.setRate(settings.speed);
-    }
   }
 
   /** Aplica ajustes alterados durante a leitura (voz, velocidade, prefetch). */
@@ -170,7 +169,7 @@ export class PlaybackController {
 
     if (this.snapshot.speed !== settings.speed) {
       this.update({ speed: settings.speed });
-      if (this.snapshot.engine === 'audio') await TrackPlayer.setRate(settings.speed);
+      this.player?.setPlaybackRate(settings.speed, 'high');
     }
 
     const engineChanged =
@@ -183,10 +182,10 @@ export class PlaybackController {
           selectedVoice(settings, settings.providerId, this.document.language));
 
     if (engineChanged || voiceChanged) {
-      // A fila contém áudio da voz antiga: refaz a partir do trecho atual.
+      // O áudio em disco é da voz antiga: recomeça o trecho atual com a nova.
       const wasPlaying = this.snapshot.status === 'playing';
-      await this.restartFromCurrentChunk();
-      this.update({ engine: provider.requiresNetwork ? 'audio' : 'device' });
+      await this.teardownPlayback();
+      this.update({ engine: provider.requiresNetwork ? 'audio' : 'device', chunkFraction: 0 });
       if (wasPlaying) await this.play();
     }
 
@@ -205,16 +204,27 @@ export class PlaybackController {
   }
 
   private async teardownPlayback(): Promise<void> {
+    this.generation += 1;
     this.clearSleepTimer();
-    this.queueChunks = [];
+    this.readyAudio.clear();
+    this.advancing = false;
+
     this.deviceSpeaking = false;
     Speech.stop();
     deactivateKeepAwake().catch(() => undefined);
-    for (const subscription of this.subscriptions.splice(0)) subscription.remove();
-    try {
-      await TrackPlayer.reset();
-    } catch {
-      // O player pode nem ter sido inicializado ainda.
+
+    this.playerSubscription?.remove();
+    this.playerSubscription = null;
+
+    if (this.player) {
+      try {
+        this.player.pause();
+        this.player.clearLockScreenControls();
+        this.player.remove();
+      } catch {
+        // O player já pode ter sido liberado.
+      }
+      this.player = null;
     }
   }
 
@@ -230,11 +240,36 @@ export class PlaybackController {
     }
 
     try {
-      if (this.queueChunks.length === 0) {
-        this.update({ status: 'preparing', message: 'Preparando a narração…' });
-        await this.enqueueFrom(this.snapshot.chunkIndex);
+      if (this.player) {
+        this.player.play();
+        this.update({ status: 'playing', message: null });
+        void this.prefetch();
+        return;
       }
-      await TrackPlayer.play();
+
+      this.update({ status: 'preparing', message: 'Preparando a narração…' });
+      await this.ensureAudioMode();
+
+      const generation = this.generation;
+      const uri = await this.audioForChunk(this.snapshot.chunkIndex);
+      if (generation !== this.generation) return;
+
+      const player = createAudioPlayer(uri, { updateInterval: STATUS_UPDATE_INTERVAL_MS });
+      this.player = player;
+      this.playerSubscription = player.addListener('playbackStatusUpdate', (status) => {
+        this.onStatus(status, generation);
+      });
+
+      player.setPlaybackRate(this.snapshot.speed, 'high');
+      this.updateLockScreen();
+      player.play();
+
+      // Retoma de onde parou dentro do trecho.
+      if (this.snapshot.chunkFraction > 0 && this.snapshot.chunkFraction < 1) {
+        const seekTarget = this.snapshot.chunkFraction;
+        void this.seekToFractionWhenLoaded(player, seekTarget, generation);
+      }
+
       this.update({ status: 'playing', message: null });
       void this.prefetch();
     } catch (error) {
@@ -249,7 +284,7 @@ export class PlaybackController {
       Speech.stop();
       deactivateKeepAwake().catch(() => undefined);
     } else {
-      await TrackPlayer.pause();
+      this.player?.pause();
     }
     this.update({ status: 'paused' });
     await this.persistProgress(true);
@@ -261,59 +296,79 @@ export class PlaybackController {
   }
 
   async skipChunks(delta: number): Promise<void> {
-    const target = clampIndex(this.snapshot.chunkIndex + delta, this.chunks.length);
-    await this.goToChunk(target);
+    await this.goToChunk(this.snapshot.chunkIndex + delta);
   }
 
-  /** Move a leitura para um trecho específico e recomeça a fila a partir dele. */
+  /** Move a leitura para um trecho específico. */
   async goToChunk(index: number): Promise<void> {
     if (this.chunks.length === 0) return;
     const target = clampIndex(index, this.chunks.length);
     const wasPlaying = this.snapshot.status === 'playing';
 
-    this.update({ chunkIndex: target, chunkFraction: 0, buffered: 0 });
+    this.update({ chunkIndex: target, chunkFraction: 0, status: wasPlaying ? 'preparing' : 'paused' });
     await this.persistProgress(true);
 
     if (this.snapshot.engine === 'device') {
       Speech.stop();
       if (wasPlaying) await this.speakCurrentChunkOnDevice();
+      else this.update({ status: 'paused' });
       return;
     }
 
-    await this.restartFromCurrentChunk();
-    if (wasPlaying) await this.play();
+    if (!this.player) {
+      if (wasPlaying) await this.play();
+      else this.update({ status: 'paused' });
+      return;
+    }
+
+    try {
+      const generation = this.generation;
+      const uri = await this.audioForChunk(target);
+      if (generation !== this.generation || !this.player) return;
+
+      this.player.replace(uri);
+      this.updateLockScreen();
+      if (wasPlaying) {
+        this.player.play();
+        this.update({ status: 'playing', message: null });
+      }
+      void this.prefetch();
+    } catch (error) {
+      this.reportError(error);
+    }
   }
 
   async setSpeed(speed: number): Promise<void> {
     this.update({ speed });
-    if (this.snapshot.engine === 'audio') await TrackPlayer.setRate(speed);
+    if (this.snapshot.engine === 'audio') this.player?.setPlaybackRate(speed, 'high');
     else if (this.snapshot.status === 'playing') await this.speakCurrentChunkOnDevice();
   }
 
-  private async restartFromCurrentChunk(): Promise<void> {
-    this.generation += 1;
-    this.queueChunks = [];
-    try {
-      await TrackPlayer.reset();
-    } catch {
-      // Nada a limpar.
-    }
+  // ---------------------------------------------------------------- motor de áudio
+
+  private async ensureAudioMode(): Promise<void> {
+    if (this.audioModeReady) return;
+    await setAudioModeAsync({
+      // É o que mantém a narração tocando com a tela apagada.
+      shouldPlayInBackground: true,
+      playsInSilentMode: true,
+      // Exigido para o sistema associar os controles da tela bloqueada ao player.
+      interruptionMode: 'doNotMix',
+    });
+    // A notificação de mídia do Android 13+ depende desta permissão.
+    await requestNotificationPermissionsAsync().catch(() => undefined);
+    this.audioModeReady = true;
   }
 
-  // ---------------------------------------------------------------- fila de áudio
+  /** Caminho do arquivo de áudio de um trecho, sintetizando se necessário. */
+  private async audioForChunk(index: number): Promise<string> {
+    const cached = this.readyAudio.get(index);
+    if (cached) return cached;
 
-  private async enqueueFrom(startIndex: number): Promise<void> {
-    const chunk = this.chunks[startIndex];
-    if (!chunk) return;
-    const track = await this.buildTrack(chunk);
-    await TrackPlayer.add([track]);
-    this.queueChunks = [startIndex];
-  }
-
-  private async buildTrack(chunk: TextChunk): Promise<Track> {
     const document = this.document;
     const settings = this.settings;
-    if (!document || !settings) throw new Error('Nenhum documento aberto.');
+    const chunk = this.chunks[index];
+    if (!document || !settings || !chunk) throw new Error('Nenhum trecho para narrar.');
 
     const voiceId = resolveVoiceId(
       settings.providerId,
@@ -330,18 +385,59 @@ export class PlaybackController {
       narrationStyle: settings.narrationStyle,
     });
 
-    return {
-      id: String(chunk.index),
-      url: audio.uri,
-      title: `${document.title} — trecho ${chunk.index + 1} de ${this.chunks.length}`,
-      artist: document.title,
-      album: 'VozPDF',
-    };
+    this.readyAudio.set(index, audio.uri);
+    return audio.uri;
+  }
+
+  private onStatus(status: AudioStatus, generation: number): void {
+    if (generation !== this.generation) return;
+
+    if (status.duration > 0) {
+      this.update({ chunkFraction: Math.min(1, status.currentTime / status.duration) });
+      void this.persistProgress(false);
+    }
+
+    if (status.didJustFinish) void this.advanceToNextChunk(generation);
+  }
+
+  private async advanceToNextChunk(generation: number): Promise<void> {
+    // `didJustFinish` pode chegar mais de uma vez para o mesmo fim de trecho.
+    if (this.advancing || generation !== this.generation) return;
+    this.advancing = true;
+
+    try {
+      const next = this.snapshot.chunkIndex + 1;
+      if (next >= this.chunks.length) {
+        this.update({ status: 'finished', chunkFraction: 1 });
+        await this.markCompleted();
+        return;
+      }
+
+      this.update({ chunkIndex: next, chunkFraction: 0 });
+      await this.persistProgress(true);
+
+      // Se a síntese ainda não alcançou este trecho, avisa em vez de emudecer.
+      if (!this.readyAudio.has(next)) {
+        this.update({ status: 'preparing', message: 'Preparando o próximo trecho…' });
+      }
+      const uri = await this.audioForChunk(next);
+      if (generation !== this.generation || !this.player) return;
+
+      this.player.replace(uri);
+      this.updateLockScreen();
+      this.player.play();
+      this.update({ status: 'playing', message: null });
+    } catch (error) {
+      if (generation === this.generation) this.reportError(error);
+    } finally {
+      this.advancing = false;
+      void this.prefetch();
+    }
   }
 
   /**
    * Mantém alguns trechos sintetizados à frente do que está tocando, para que a
-   * narração não engasgue entre um trecho e o seguinte.
+   * narração não engasgue na virada de um trecho para o outro.
    */
   private async prefetch(): Promise<void> {
     if (this.prefetching || this.snapshot.engine !== 'audio') return;
@@ -352,32 +448,29 @@ export class PlaybackController {
     const generation = this.generation;
 
     try {
-      while (generation === this.generation) {
-        const last = this.queueChunks[this.queueChunks.length - 1];
-        if (last === undefined) break;
+      for (let offset = 1; offset <= settings.prefetchCount; offset += 1) {
+        if (generation !== this.generation) return;
+        const index = this.snapshot.chunkIndex + offset;
+        if (index >= this.chunks.length) break;
+        if (this.readyAudio.has(index)) continue;
 
-        const activeQueueIndex = this.queueChunks.indexOf(this.snapshot.chunkIndex);
-        const ahead = this.queueChunks.length - 1 - Math.max(0, activeQueueIndex);
-        if (ahead >= settings.prefetchCount) break;
+        const uri = await this.audioForChunk(index);
+        if (generation !== this.generation) return;
 
-        const nextIndex = last + 1;
-        const nextChunk = this.chunks[nextIndex];
-        if (!nextChunk) break;
+        // O trecho imediatamente seguinte também vai para o buffer do player,
+        // para a troca de faixa ser instantânea.
+        if (offset === 1) await preload(uri).catch(() => undefined);
 
-        const track = await this.buildTrack(nextChunk);
-        if (generation !== this.generation) break;
-
-        await TrackPlayer.add([track]);
-        this.queueChunks.push(nextIndex);
-        this.update({ buffered: this.queueChunks.length - 1 - Math.max(0, activeQueueIndex) });
+        this.update({ buffered: this.countBufferedAhead() });
       }
-
-      await this.trimPlayedTracks();
+      this.update({ buffered: this.countBufferedAhead() });
 
       // Só depois de sintetizar é que o cache é aparado, e nunca os arquivos
-      // que estão na fila prestes a tocar.
-      const queued = new Set((await TrackPlayer.getQueue()).map((track) => track.url));
-      trimAudioCache(settings.audioCacheLimitMb * 1024 * 1024, queued);
+      // que estão prestes a tocar.
+      trimAudioCache(
+        settings.audioCacheLimitMb * 1024 * 1024,
+        new Set(this.readyAudio.values())
+      );
     } catch (error) {
       if (generation === this.generation) this.reportError(error);
     } finally {
@@ -385,83 +478,50 @@ export class PlaybackController {
     }
   }
 
-  /**
-   * Um livro pode ter milhares de trechos; deixar todos na fila do player faria
-   * a lista crescer sem limite. Descartamos os já narrados, mantendo alguns
-   * atrás da posição atual para que "voltar um trecho" continue instantâneo.
-   */
-  private async trimPlayedTracks(): Promise<void> {
-    const KEEP_BEHIND = 10;
-    const TRIM_THRESHOLD = 40;
+  private countBufferedAhead(): number {
+    let count = 0;
+    for (let index = this.snapshot.chunkIndex + 1; index < this.chunks.length; index += 1) {
+      if (!this.readyAudio.has(index)) break;
+      count += 1;
+    }
+    return count;
+  }
 
-    const activeQueueIndex = this.queueChunks.indexOf(this.snapshot.chunkIndex);
-    if (activeQueueIndex < TRIM_THRESHOLD) return;
+  private updateLockScreen(): void {
+    const player = this.player;
+    const document = this.document;
+    if (!player || !document) return;
 
-    const removeCount = activeQueueIndex - KEEP_BEHIND;
-    if (removeCount <= 0) return;
+    const metadata = {
+      title: document.title,
+      artist: `Trecho ${this.snapshot.chunkIndex + 1} de ${this.chunks.length}`,
+      albumTitle: 'VozPDF',
+    };
 
-    const indexes = Array.from({ length: removeCount }, (_, i) => i);
     try {
-      await TrackPlayer.remove(indexes);
-      // Removemos sempre um prefixo, então o mapeamento posição→trecho
-      // continua alinhado depois do splice.
-      this.queueChunks.splice(0, removeCount);
+      player.setActiveForLockScreen(true, metadata, {
+        showSeekForward: true,
+        showSeekBackward: true,
+      });
     } catch {
-      // Se o player recusar a remoção, a fila apenas continua maior.
+      // Sem controles na tela bloqueada a leitura continua normalmente.
     }
   }
 
-  private attachPlayerListeners(): void {
-    for (const subscription of this.subscriptions.splice(0)) subscription.remove();
-
-    this.subscriptions.push(
-      TrackPlayer.addEventListener(Event.PlaybackActiveTrackChanged, ({ track }) => {
-        const chunkIndex = Number(track?.id);
-        if (!Number.isFinite(chunkIndex)) return;
-        this.update({ chunkIndex, chunkFraction: 0 });
-        void this.persistProgress(true);
-        void this.prefetch();
-      })
-    );
-
-    this.subscriptions.push(
-      TrackPlayer.addEventListener(Event.PlaybackProgressUpdated, ({ position, duration }) => {
-        const fraction = duration > 0 ? Math.min(1, position / duration) : 0;
-        this.update({ chunkFraction: fraction });
-        void this.persistProgress(false);
-      })
-    );
-
-    this.subscriptions.push(
-      TrackPlayer.addEventListener(Event.PlaybackState, ({ state }) => {
-        if (state === State.Playing) this.update({ status: 'playing', message: null });
-        else if (state === State.Paused || state === State.Stopped) {
-          if (this.snapshot.status !== 'finished') this.update({ status: 'paused' });
-        } else if (state === State.Buffering || state === State.Loading) {
-          this.update({ status: 'preparing' });
-        }
-      })
-    );
-
-    this.subscriptions.push(
-      TrackPlayer.addEventListener(Event.PlaybackQueueEnded, () => {
-        const last = this.queueChunks[this.queueChunks.length - 1] ?? 0;
-        if (last >= this.chunks.length - 1) {
-          this.update({ status: 'finished', chunkFraction: 1 });
-          void this.markCompleted();
-        } else {
-          // A fila acabou antes do documento: a síntese não acompanhou.
-          this.update({ status: 'preparing', message: 'Preparando o próximo trecho…' });
-          void this.prefetch().then(() => TrackPlayer.play());
-        }
-      })
-    );
-
-    this.subscriptions.push(
-      TrackPlayer.addEventListener(Event.PlaybackError, ({ message }) => {
-        this.update({ status: 'error', message: `Falha ao tocar o áudio: ${message}` });
-      })
-    );
+  /** Retoma no meio do trecho: o `seek` só vale depois que a duração é conhecida. */
+  private async seekToFractionWhenLoaded(
+    player: AudioPlayer,
+    fraction: number,
+    generation: number
+  ): Promise<void> {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (generation !== this.generation || this.player !== player) return;
+      if (player.isLoaded && player.duration > 0) {
+        await player.seekTo(player.duration * fraction).catch(() => undefined);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
   }
 
   // ---------------------------------------------------------------- voz do sistema
