@@ -24,6 +24,13 @@ fun config(name: String): String =
         project.findProperty(name) as String?,
     ).firstOrNull { it.isNotBlank() }.orEmpty()
 
+val supabaseUrl = config("SUPABASE_URL").trimEnd('/')
+val supabaseAnonKey = config("SUPABASE_ANON_KEY")
+
+// Aparece no log do CI para dar para conferir a configuracao sem abrir o APK.
+// A chave nunca e impressa, so o fato de estar presente.
+println("Supabase: url=${supabaseUrl.ifBlank { "(vazio)" }} chave=${if (supabaseAnonKey.isBlank()) "(vazia)" else "presente"}")
+
 android {
     namespace = "com.bracco.gastos"
     compileSdk = 34
@@ -35,8 +42,8 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        buildConfigField("String", "SUPABASE_URL", "\"${config("SUPABASE_URL").trimEnd('/')}\"")
-        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${config("SUPABASE_ANON_KEY")}\"")
+        buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
     }
 
     signingConfigs {

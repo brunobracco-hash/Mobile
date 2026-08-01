@@ -37,10 +37,15 @@ jobs:
         # nao chegaram ao BuildConfig por qualquer motivo, o build falha aqui
         # em vez de publicar um APK que so mostra "nao configurado" no celular.
         run: |
-          if ! grep -qa "supabase.co" app/build/outputs/apk/release/app-release.apk; then
+          # O BuildConfig vira classes.dex, que fica comprimido dentro do APK:
+          # e preciso descompactar antes de procurar a string.
+          rm -rf /tmp/apkcheck
+          unzip -q -o app/build/outputs/apk/release/app-release.apk -d /tmp/apkcheck
+          if ! grep -qar "supabase.co" /tmp/apkcheck; then
             echo "::error::APK gerado sem as credenciais do Supabase."
             exit 1
           fi
+          echo "APK contem as credenciais."
 
       - name: Renomear APK
         run: |
