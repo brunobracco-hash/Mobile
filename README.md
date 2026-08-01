@@ -101,7 +101,9 @@ Ao salvar e enviar a mudança, o APK é gerado de novo automaticamente.
 
 ## Como instalar no celular
 
-1. Vá em **Releases** do repositório e abra a release `Gastos - última versão`.
+1. Vá em **Releases** do repositório e abra a release `Gastos - última versão`
+   (tag `gastos-latest`). Link direto:
+   <https://github.com/brunobracco-hash/Mobile/releases/download/gastos-latest/gastos.apk>
 2. Pelo navegador **do próprio celular**, baixe o arquivo `gastos.apk`.
 3. Abra o arquivo baixado. O Android vai pedir permissão para instalar apps de
    fonte desconhecida — é normal para app fora da Play Store. Autorize e

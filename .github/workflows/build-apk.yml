@@ -47,7 +47,9 @@ jobs:
       - name: Publicar release para download no celular
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: apk-latest
+          # Tag exclusiva deste app: o repositorio hospeda mais de um projeto
+          # e uma tag generica sobrescreveria a release do outro.
+          tag_name: gastos-latest
           name: Gastos - ultima versao
           body: |
             APK pronto para instalar. Baixe `gastos.apk` pelo proprio celular
@@ -55,4 +57,3 @@ jobs:
 
             Build: ${{ github.sha }}
           files: dist/gastos.apk
-          make_latest: true
