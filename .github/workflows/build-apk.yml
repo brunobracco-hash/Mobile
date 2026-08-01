@@ -1,0 +1,58 @@
+name: Gerar APK
+
+on:
+  push:
+    branches:
+      - claude/household-expense-tracker-app-jb6ucl
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compilar APK de release
+        env:
+          # Se os secrets existirem, eles tem prioridade sobre o gradle.properties.
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Renomear APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk dist/gastos.apk
+
+      - name: Publicar APK como artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: gastos-apk
+          path: dist/gastos.apk
+          retention-days: 90
+
+      - name: Publicar release para download no celular
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-latest
+          name: Gastos - ultima versao
+          body: |
+            APK pronto para instalar. Baixe `gastos.apk` pelo proprio celular
+            e abra o arquivo para instalar.
+
+            Build: ${{ github.sha }}
+          files: dist/gastos.apk
+          make_latest: true
