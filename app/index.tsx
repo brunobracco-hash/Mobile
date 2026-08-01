@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -70,19 +70,23 @@ export default function LibraryScreen() {
   }, []);
 
   // O aviso de chave ausente só faz sentido quando ela realmente não está lá.
-  useEffect(() => {
+  // A chave é gravada em outra tela, então a verificação precisa acontecer a
+  // cada vez que a biblioteca volta ao foco — e não só quando o provedor muda.
+  const checkApiKey = useCallback(async () => {
     const provider = getProvider(settings.providerId);
     if (!provider.requiresApiKey) {
       setMissingApiKey(false);
       return;
     }
-    void getApiKey(provider.id).then((key) => setMissingApiKey(!key));
+    const key = await getApiKey(provider.id);
+    setMissingApiKey(!key);
   }, [settings.providerId]);
 
   useFocusEffect(
     useCallback(() => {
       void refresh();
-    }, [refresh])
+      void checkApiKey();
+    }, [checkApiKey, refresh])
   );
 
   const provider = getProvider(settings.providerId);
