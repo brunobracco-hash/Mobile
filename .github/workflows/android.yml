@@ -1,0 +1,56 @@
+name: Build APK
+
+on:
+  push:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build release APK
+        run: ./gradlew --no-daemon assembleRelease
+
+      - name: Rename APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/PDF-para-Word.apk"
+          ls -lh dist
+
+      - name: Upload APK as build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PDF-para-Word-apk
+          path: dist/PDF-para-Word.apk
+          if-no-files-found: error
+
+      - name: Publish APK to the "apk" release
+        if: github.ref == 'refs/heads/claude/pdf-to-word-ocr-app-umtlmz'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view apk >/dev/null 2>&1; then
+            gh release create apk \
+              --title "PDF para Word - APK" \
+              --notes "APK mais recente do app. Baixe o arquivo PDF-para-Word.apk pelo celular e instale." \
+              --target "${GITHUB_SHA}"
+          fi
+          gh release upload apk dist/PDF-para-Word.apk --clobber

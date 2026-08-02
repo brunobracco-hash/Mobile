@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- folha -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M34,26h26l16,16v40c0,2.2 -1.8,4 -4,4H34c-2.2,0 -4,-1.8 -4,-4V30C30,27.8 31.8,26 34,26z" />
+    <!-- dobra -->
+    <path
+        android:fillColor="#FFB7CFE8"
+        android:pathData="M60,26l16,16h-16V26z" />
+    <!-- linhas de texto -->
+    <path
+        android:fillColor="#FF1B5E9E"
+        android:pathData="M38,52h32v4h-32z" />
+    <path
+        android:fillColor="#FF1B5E9E"
+        android:pathData="M38,62h32v4h-32z" />
+    <path
+        android:fillColor="#FF1B5E9E"
+        android:pathData="M38,72h20v4h-20z" />
+</vector>

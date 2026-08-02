@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PDF para Word</string>
+    <string name="subtitle">Converte PDF em .docx com OCR offline. Só texto: imagens são descartadas, e não há limite de tamanho do PDF.</string>
+
+    <string name="no_file">Nenhum PDF selecionado</string>
+    <string name="pick_pdf">Escolher PDF</string>
+    <string name="selected_file">Selecionado: %1$s</string>
+    <string name="unknown_file">arquivo</string>
+
+    <string name="options">Opções</string>
+    <string name="opt_join_lines">Juntar linhas em parágrafos</string>
+    <string name="opt_page_breaks">Quebra de página a cada página do PDF</string>
+    <string name="opt_page_markers">Marcar o número da página no texto</string>
+    <string name="opt_force_ocr">Forçar OCR em todas as páginas</string>
+    <string name="ocr_quality">Qualidade do OCR</string>
+    <string name="dpi_low">Rápida</string>
+    <string name="dpi_medium">Equilibrada</string>
+    <string name="dpi_high">Alta</string>
+    <string name="no_images_note">O documento gerado contém apenas texto: nenhuma imagem é copiada, o que mantém o .docx pequeno mesmo em PDFs muito grandes.</string>
+
+    <string name="convert">Converter para Word</string>
+    <string name="action_cancel">Cancelar</string>
+    <string name="save_docx">Salvar arquivo</string>
+    <string name="share_docx">Compartilhar</string>
+    <string name="convert_another">Converter outro PDF</string>
+
+    <string name="phase_copying">Lendo o PDF…</string>
+    <string name="phase_analyzing">Analisando o documento…</string>
+    <string name="phase_writing">Gravando o arquivo do Word…</string>
+    <string name="phase_page">Convertendo página %1$d de %2$d</string>
+    <string name="ocr_pages">%1$d página(s) processada(s) com OCR</string>
+
+    <string name="result_title">Conversão concluída</string>
+    <string name="result_failed">Não foi possível converter</string>
+    <string name="result_details">Arquivo: %1$s\nTamanho: %2$s\nPáginas: %3$d (OCR em %4$d)\nParágrafos: %5$d\nTempo: %6$s</string>
+
+    <string name="pick_first">Escolha um PDF primeiro.</string>
+    <string name="already_running">Já existe uma conversão em andamento.</string>
+    <string name="cancelled">Conversão cancelada.</string>
+    <string name="saved">Arquivo salvo.</string>
+    <string name="share_with">Compartilhar documento</string>
+    <string name="page_marker">página %1$d</string>
+
+    <string name="error_io">Erro de leitura/gravação: %1$s</string>
+    <string name="error_memory">Memória insuficiente. Tente novamente com a qualidade de OCR \"Rápida\".</string>
+    <string name="error_generic">Ocorreu um erro inesperado na conversão.</string>
+    <string name="error_cannot_open_pdf">Não foi possível abrir este PDF. Ele pode estar protegido por senha ou corrompido.</string>
+    <string name="error_cannot_read_file">Não foi possível ler o arquivo selecionado.</string>
+    <string name="error_cannot_write_file">Não foi possível gravar o arquivo no local escolhido.</string>
+    <string name="error_empty_file">O arquivo selecionado está vazio.</string>
+
+    <string name="notif_channel_name">Conversão de PDF</string>
+    <string name="notif_title">PDF para Word</string>
+    <string name="notif_preparing">Preparando…</string>
+    <string name="notif_reading">Lendo o PDF…</string>
+    <string name="notif_analyzing">Analisando o documento…</string>
+    <string name="notif_page">Página %1$d de %2$d</string>
+    <string name="notif_done_title">Conversão concluída</string>
+    <string name="notif_done_text">%1$s • %2$d página(s). Toque para salvar ou compartilhar.</string>
+    <string name="notif_failed_title">Falha na conversão</string>
+</resources>
