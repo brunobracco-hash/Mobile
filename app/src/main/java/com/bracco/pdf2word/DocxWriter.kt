@@ -177,6 +177,10 @@ class DocxWriter(private val bodyFile: File) : Closeable {
                 "</w:docDefaults>" +
                 "<w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\">" +
                 "<w:name w:val=\"Normal\"/><w:qFormat/>" +
+                "<w:rPr>" +
+                "<w:rFonts w:ascii=\"Calibri\" w:hAnsi=\"Calibri\" w:cs=\"Calibri\"/>" +
+                "<w:sz w:val=\"22\"/><w:szCs w:val=\"22\"/>" +
+                "</w:rPr>" +
                 "</w:style>" +
                 "</w:styles>"
 

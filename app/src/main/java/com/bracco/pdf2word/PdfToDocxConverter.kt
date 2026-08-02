@@ -109,15 +109,17 @@ class PdfToDocxConverter(
                     }
                 }
 
-                val needsOcr = options.forceOcr || TextLayout.meaningfulChars(text) < MIN_TEXT_CHARS
-                if (needsOcr && renderer != null) {
-                    if (recognizer == null) {
-                        recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-                    }
-                    val ocrText = ocrPage(renderer, recognizer, index)
-                    if (TextLayout.meaningfulChars(ocrText) >= TextLayout.meaningfulChars(text)) {
-                        text = ocrText
-                        ocrPages++
+                if (options.forceOcr || isScanned(text, document, index)) {
+                    if (renderer != null) {
+                        if (recognizer == null) {
+                            recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                        }
+                        val ocrText = ocrPage(renderer, recognizer, index)
+                        val recognized = TextLayout.meaningfulChars(ocrText)
+                        if (recognized > 0 && recognized >= TextLayout.meaningfulChars(text)) {
+                            text = ocrText
+                            ocrPages++
+                        }
                     }
                 }
 
@@ -174,6 +176,28 @@ class PdfToDocxConverter(
     } catch (e: Throwable) {
         Log.w(TAG, "PDFBox nao conseguiu abrir o PDF, seguindo so com OCR: ${e.message}")
         null
+    }
+
+    /**
+     * Decide se a pagina e digitalizada comparando a quantidade de texto com a area
+     * da pagina. Um simples "tem pouco texto" nao basta: PDFs de processo eletronico
+     * carimbam cabecalho e assinatura em texto sobre paginas escaneadas, o que daria
+     * um falso positivo de "pagina digital" e deixaria o conteudo de fora.
+     */
+    private fun isScanned(text: String, document: PDDocument?, index: Int): Boolean {
+        val chars = TextLayout.meaningfulChars(text)
+        if (chars < MIN_TEXT_CHARS) return true
+        val area = pageAreaInSquareInches(document, index)
+        return chars / area < MIN_CHARS_PER_SQUARE_INCH
+    }
+
+    private fun pageAreaInSquareInches(document: PDDocument?, index: Int): Double = try {
+        val box = document?.getPage(index)?.mediaBox
+        val width = (box?.width ?: 0f) / 72.0
+        val height = (box?.height ?: 0f) / 72.0
+        if (width > 1.0 && height > 1.0) width * height else DEFAULT_PAGE_AREA
+    } catch (e: Throwable) {
+        DEFAULT_PAGE_AREA
     }
 
     private fun ocrPage(renderer: PdfRenderer, recognizer: TextRecognizer, index: Int): String {
@@ -272,6 +296,15 @@ class PdfToDocxConverter(
 
         /** Abaixo disso a pagina e tratada como digitalizada e vai para o OCR. */
         private const val MIN_TEXT_CHARS = 15
+
+        /**
+         * Uma pagina A4 cheia de texto tem ~40 caracteres por polegada quadrada.
+         * So carimbos de processo eletronico ficam bem abaixo de 8.
+         */
+        private const val MIN_CHARS_PER_SQUARE_INCH = 8.0
+
+        /** A4 em polegadas, usado quando nao da para ler as dimensoes da pagina. */
+        private const val DEFAULT_PAGE_AREA = 8.27 * 11.69
 
         private const val MAX_SIDE_PX = 3000
         private const val MAX_PIXELS = 6_000_000L

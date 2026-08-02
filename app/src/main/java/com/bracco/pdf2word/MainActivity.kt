@@ -29,6 +29,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var selectedUri: Uri? = null
     private var lastResult: ConversionResult? = null
+    private var resultDismissed = false
 
     private val pickPdf = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onPdfSelected(uri)
@@ -58,9 +59,9 @@ class MainActivity : AppCompatActivity() {
         }
         binding.buttonShare.setOnClickListener { shareResult() }
         binding.buttonNew.setOnClickListener {
-            ConversionState.reset()
+            resultDismissed = true
             lastResult = null
-            render(ConversionStatus.Idle)
+            ConversionState.reset()
         }
 
         askNotificationPermission()
@@ -130,6 +131,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         lastResult = null
+        resultDismissed = false
         ConversionState.update(ConversionStatus.Running(ConversionStatus.Phase.COPYING))
         ConversionService.start(this, uri, currentOptions())
     }
@@ -150,10 +152,10 @@ class MainActivity : AppCompatActivity() {
         when (status) {
             is ConversionStatus.Idle -> {
                 binding.groupProgress.visibility = View.GONE
-                binding.groupResult.visibility = View.GONE
                 binding.cardOptions.visibility = View.VISIBLE
                 binding.buttonConvert.visibility = View.VISIBLE
                 binding.buttonConvert.isEnabled = selectedUri != null
+                showPreviousOutputIfAny()
             }
 
             is ConversionStatus.Running -> {
@@ -227,6 +229,43 @@ class MainActivity : AppCompatActivity() {
             binding.buttonSave.visibility = View.VISIBLE
             binding.buttonShare.visibility = View.VISIBLE
         }
+    }
+
+    /**
+     * O .docx convertido continua no armazenamento interno do app depois que a tela e
+     * fechada. Se ainda nao foi salvo nem compartilhado, ele volta a ser oferecido aqui.
+     */
+    private fun showPreviousOutputIfAny() {
+        if (resultDismissed) {
+            binding.groupResult.visibility = View.GONE
+            return
+        }
+        val existing = File(filesDir, "out").listFiles()?.firstOrNull { it.extension == "docx" }
+        if (existing == null || existing.length() == 0L) {
+            binding.groupResult.visibility = View.GONE
+            return
+        }
+        if (lastResult == null) {
+            lastResult = ConversionResult(
+                outputPath = existing.absolutePath,
+                fileName = existing.name,
+                pages = 0,
+                ocrPages = 0,
+                paragraphs = 0,
+                characters = 0L,
+                sizeBytes = existing.length(),
+                elapsedMs = 0L
+            )
+        }
+        binding.groupResult.visibility = View.VISIBLE
+        binding.textResultTitle.text = getString(R.string.last_file)
+        binding.textResult.text = getString(
+            R.string.last_file_details,
+            existing.name,
+            formatSize(existing.length())
+        )
+        binding.buttonSave.visibility = View.VISIBLE
+        binding.buttonShare.visibility = View.VISIBLE
     }
 
     private fun exportTo(target: Uri) {

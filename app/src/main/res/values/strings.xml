@@ -35,6 +35,9 @@
     <string name="result_failed">Não foi possível converter</string>
     <string name="result_details">Arquivo: %1$s\nTamanho: %2$s\nPáginas: %3$d (OCR em %4$d)\nParágrafos: %5$d\nTempo: %6$s</string>
 
+    <string name="last_file">Documento pronto</string>
+    <string name="last_file_details">Arquivo: %1$s\nTamanho: %2$s</string>
+
     <string name="pick_first">Escolha um PDF primeiro.</string>
     <string name="already_running">Já existe uma conversão em andamento.</string>
     <string name="cancelled">Conversão cancelada.</string>
