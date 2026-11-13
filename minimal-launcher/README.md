@@ -31,9 +31,14 @@ lembrar de reativar.
    e baixe `minimal-launcher.apk` da versão *Minimal Launcher (última versão)*.
 2. Abra o arquivo baixado e permita a instalação de "fontes desconhecidas" quando o
    Android pedir.
-3. Aperte o botão *início*: o Android pergunta qual tela inicial usar. Escolha
-   **Minimal** e *Sempre*. (Se não perguntar: *Configurações → Apps → Apps padrão →
-   App de tela inicial*.)
+3. Abra o **Minimal**. Na primeira vez ele pede para virar a tela inicial do
+   celular: escolha **Minimal** (e *Sempre*, se o Android perguntar).
+   Enquanto ele não for a tela inicial, aparece um aviso em branco acima da busca;
+   toque nele para tentar de novo. (Caminho manual: *Configurações → Apps →
+   Apps padrão → App de tela inicial*.)
+
+Isso é o que faz o Minimal "prender" o celular: o botão *início* e o gesto de
+voltar para a tela inicial passam a abrir o Minimal, de dentro de qualquer app.
 
 Requer Android 8 ou mais novo.
 

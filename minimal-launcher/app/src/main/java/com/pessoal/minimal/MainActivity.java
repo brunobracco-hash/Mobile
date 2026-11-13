@@ -2,6 +2,7 @@ package com.pessoal.minimal;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.role.RoleManager;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Intent;
@@ -66,6 +67,8 @@ public class MainActivity extends Activity {
     private static final String PREFS = "minimal";
     private static final String KEY_FAVORITOS = "favoritos";
     private static final String KEY_PAUSA_ATE = "pausa_ate";
+    private static final String KEY_JA_PEDIU_PADRAO = "ja_pediu_padrao";
+    private static final int PEDIDO_PADRAO = 1;
 
     private static final int PAUSA_PADRAO_MIN = 30;
     private static final int PAUSA_MAXIMA_MIN = 24 * 60;
@@ -139,6 +142,57 @@ public class MainActivity extends Activity {
         super.onResume();
         carregarApps();
         desenhar();
+        // Na primeira vez, já pede ao Android para virar a tela inicial.
+        if (!ehTelaInicialPadrao() && !prefs.getBoolean(KEY_JA_PEDIU_PADRAO, false)) {
+            prefs.edit().putBoolean(KEY_JA_PEDIU_PADRAO, true).apply();
+            pedirParaSerPadrao();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int pedido, int resultado, Intent dados) {
+        super.onActivityResult(pedido, resultado, dados);
+        if (pedido == PEDIDO_PADRAO && !ehTelaInicialPadrao()) {
+            // Alguns celulares não mostram a janelinha (ou o usuário recusou):
+            // cai no ajuste do sistema, onde sempre dá para escolher.
+            abrir(new Intent(Settings.ACTION_HOME_SETTINGS));
+        }
+        desenhar();
+    }
+
+    // ------------------------------------------------------------------ tela inicial padrão
+
+    /** O Minimal é quem o Android abre ao apertar "início"? */
+    private boolean ehTelaInicialPadrao() {
+        if (Build.VERSION.SDK_INT >= 29) {
+            RoleManager rm = getSystemService(RoleManager.class);
+            if (rm != null && rm.isRoleAvailable(RoleManager.ROLE_HOME)) {
+                return rm.isRoleHeld(RoleManager.ROLE_HOME);
+            }
+        }
+        Intent inicio = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+        ResolveInfo ri = getPackageManager()
+                .resolveActivity(inicio, PackageManager.MATCH_DEFAULT_ONLY);
+        return ri != null && ri.activityInfo != null
+                && getPackageName().equals(ri.activityInfo.packageName);
+    }
+
+    private void pedirParaSerPadrao() {
+        if (Build.VERSION.SDK_INT >= 29) {
+            RoleManager rm = getSystemService(RoleManager.class);
+            if (rm != null && rm.isRoleAvailable(RoleManager.ROLE_HOME)) {
+                try {
+                    startActivityForResult(
+                            rm.createRequestRoleIntent(RoleManager.ROLE_HOME), PEDIDO_PADRAO);
+                    return;
+                } catch (ActivityNotFoundException e) {
+                    // segue para o ajuste do sistema
+                }
+            }
+        }
+        if (!abrir(new Intent(Settings.ACTION_HOME_SETTINGS))) {
+            abrir(new Intent(Settings.ACTION_SETTINGS));
+        }
     }
 
     @Override
@@ -293,6 +347,19 @@ public class MainActivity extends Activity {
     }
 
     private void atualizarAviso() {
+        aviso.setOnClickListener(null);
+        aviso.setClickable(false);
+        if (!ehTelaInicialPadrao()) {
+            // Sem isto o botão "início" leva ao launcher antigo e o Minimal não prende nada.
+            aviso.setText("O Minimal ainda não é a tela inicial do celular, então "
+                    + "o botão “início” leva ao launcher antigo. "
+                    + "Toque aqui e escolha Minimal.");
+            aviso.setTextColor(BRANCO);
+            aviso.setOnClickListener(v -> pedirParaSerPadrao());
+            aviso.setVisibility(View.VISIBLE);
+            return;
+        }
+        aviso.setTextColor(CINZA);
         long ate = pausaAte();
         if (ate > System.currentTimeMillis()) {
             String hora = DateFormat.getTimeInstance(DateFormat.SHORT).format(new Date(ate));
