@@ -1,0 +1,64 @@
+name: Launcher Minimal (Android)
+
+# O APK é montado aqui porque o SDK do Android não cabe no repositório.
+# Cada build bem-sucedido atualiza a versão "minimal-launcher" em Releases,
+# de onde dá para baixar o APK direto no navegador do celular.
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "minimal-launcher/**"
+      - ".github/workflows/minimal-launcher.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: minimal-launcher
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+
+      - name: Montar o APK
+        run: gradle --no-daemon assembleRelease
+
+      - name: Conferir o APK
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          AAPT2=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)aapt2
+          "$AAPT2" dump badging "$APK" | tee badging.txt
+          grep -q "package: name='com.pessoal.minimal'" badging.txt
+          grep -q "launchable-activity: name='com.pessoal.minimal.MainActivity'" badging.txt
+          cp "$APK" minimal-launcher.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: minimal-launcher
+          path: minimal-launcher/minimal-launcher.apk
+
+      - name: Publicar para baixar no celular
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: minimal-launcher
+          name: Minimal Launcher (última versão)
+          target_commitish: ${{ github.sha }}
+          prerelease: true
+          body: |
+            Baixe o `minimal-launcher.apk` no celular e instale.
+            Build de ${{ github.sha }} (branch ${{ github.ref_name }}).
+          files: minimal-launcher/minimal-launcher.apk

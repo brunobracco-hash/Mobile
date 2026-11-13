@@ -1,0 +1,48 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.pessoal.minimal'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.pessoal.minimal'
+        minSdk 26
+        targetSdk 35
+        // No GitHub Actions cada build ganha um número maior, então o celular
+        // aceita a nova versão por cima da antiga.
+        versionCode((System.getenv('GITHUB_RUN_NUMBER') ?: '1') as int)
+        versionName '1.0'
+    }
+
+    // Chave fixa, guardada no repositório: sem ela cada build sairia assinado
+    // com uma chave diferente e o Android recusaria atualizar o app instalado.
+    signingConfigs {
+        fixa {
+            storeFile file('../minimal.keystore')
+            storePassword 'minimal'
+            keyAlias 'minimal'
+            keyPassword 'minimal'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.fixa
+        }
+        debug {
+            signingConfig signingConfigs.fixa
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        checkReleaseBuilds false
+    }
+}

@@ -7,7 +7,7 @@ name: App do Windows
 on:
   push:
     branches: ["**"]
-    paths-ignore: ["README.md"]
+    paths-ignore: ["README.md", "minimal-launcher/**", ".github/workflows/minimal-launcher.yml"]
   workflow_dispatch:
 
 jobs:
